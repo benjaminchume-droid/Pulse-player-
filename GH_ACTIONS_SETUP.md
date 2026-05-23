@@ -38,6 +38,10 @@ The system utilizes three separate workflow blueprints aligned with top-tier Dev
    - **Target**: Pushed tags initiating on semantic tagging patterns matching `v*` (e.g. `v1.0.4+25`).
    - **Responsibility**: Performs deep build tests, decodes production signing credentials, compiles production-ready `.aab` (Android App Bundle) and `.apk`, automatically generates Release changelogs by tracking differences since prior Git tag, registers a release under the tag name on GitHub, and uploads binaries directly onto the Release page.
 
+4. **Android Build Application Workflow (`android_build.yml`)**
+   - **Target**: Triggered on push to `main` (for code in `android/`), or manually.
+   - **Responsibility**: Automatically builds the latest native Android application. It compiles and packages both a **Debug APK** (retained for 14 days) and optimized **Release APK / AAB** packages (retained for 30 days) and uploads them directly back to the GitHub Action run dashboard for easy on-demand download.
+
 ---
 
 ## 🔐 Android App Signing Setup (Play Store and Secure Sideloading)
