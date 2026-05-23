@@ -5,6 +5,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -104,14 +105,17 @@ fun NowPlayingOverlay(
         val duration = song.duration
         val displayPos = if (playbackPosition > duration) duration else playbackPosition
 
+        val backgroundModifier = if (isAmoled) {
+            Modifier.background(Color.Black)
+        } else {
+            Modifier.background(Brush.verticalGradient(colors = theme.gradientColors))
+        }
+
         // Outer layout wrapping
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    if (isAmoled) Color.Black 
-                    else Brush.verticalGradient(colors = theme.gradientColors)
-                )
+                .then(backgroundModifier)
         ) {
             // Background ambient dynamic fog layer
             if (!isAmoled && perfMode != PerformanceMode.LITE) {
