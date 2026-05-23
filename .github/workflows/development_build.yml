@@ -1,0 +1,69 @@
+name: Development Builds
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - 'android/**'
+      - '.github/workflows/development_build.yml'
+  workflow_dispatch: # Enable manual triggering with custom parameters
+
+jobs:
+  build_dev_apk:
+    name: Build Development Unsigned APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout current repository revision
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Set up Java JDK required by Android SDK compilation
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # Configure Flutter environment with internal caching
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.x'
+          channel: 'stable'
+          cache: true
+          cache-key: "flutter-:os:-:channel:-:version:-:arch:-:hash:"
+          cache-path: "${{ runner.tool_cache }}/flutter"
+
+      # Install pubspec modules
+      - name: Install Dependencies
+        run: flutter pub get
+
+      # Setup Gradle Caching for faster incremental compile times
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+
+      # Build APK strictly optimized for testing / rapid feedback loops (fat debug or split apk)
+      # Uses dev flavor/build configurations if applicable - here we compile standard release split
+      - name: Build Unsigned APK
+        run: flutter build apk --release --split-per-abi
+
+      # Upload Android binary artifacts to Actions dashboard
+      - name: Upload Dev APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulse-player-dev-apks
+          path: build/app/outputs/flutter-apk/app-*.apk
+          retention-days: 14
+
+      # Summary output to job page
+      - name: generate-build-summary
+        run: |
+          echo "### 🚀 Development Build Succeeded!" >> $GITHUB_STEP_SUMMARY
+          echo "The latest Pulse Player development binaries have been compiled and exported." >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit SHA**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifacts Retained**: 14 Days" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,6 @@
+{
+  "name": "PULSE PLAYER",
+  "description": "Premium music streaming with liquid glass visuals, immersive physics-based motion design, custom 10-band equalizer and spatial audio.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
