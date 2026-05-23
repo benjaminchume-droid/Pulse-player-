@@ -21,7 +21,7 @@ fun AnimatedGlowBackground(modifier: Modifier = Modifier) {
         initialValue = -100f,
         targetValue = 600f,
         animationSpec = infiniteRepeatable(
-            animation = tween(12000, ease = LinearEasing),
+            animation = tween(12000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "Glow1X"
@@ -30,7 +30,7 @@ fun AnimatedGlowBackground(modifier: Modifier = Modifier) {
         initialValue = 100f,
         targetValue = 900f,
         animationSpec = infiniteRepeatable(
-            animation = tween(15000, ease = LinearEasing),
+            animation = tween(15000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "Glow1Y"
@@ -40,7 +40,7 @@ fun AnimatedGlowBackground(modifier: Modifier = Modifier) {
         initialValue = 800f,
         targetValue = 150f,
         animationSpec = infiniteRepeatable(
-            animation = tween(14000, ease = LinearEasing),
+            animation = tween(14000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "Glow2X"
@@ -49,7 +49,7 @@ fun AnimatedGlowBackground(modifier: Modifier = Modifier) {
         initialValue = 200f,
         targetValue = 1100f,
         animationSpec = infiniteRepeatable(
-            animation = tween(11000, ease = LinearEasing),
+            animation = tween(11000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "Glow2Y"

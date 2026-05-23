@@ -72,7 +72,7 @@ fun PlaylistScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(Icons.Default.Sparkles, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
                     Text(
                         text = "FORMULATE SMART MIX_STREAMS",
                         color = Color.White,
@@ -235,7 +235,7 @@ fun PlaylistScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = if (playlist.description.contains("AI")) Icons.Default.Sparkles else Icons.Default.List,
+                                imageVector = if (playlist.description.contains("AI")) Icons.Default.AutoAwesome else Icons.Default.List,
                                 contentDescription = null,
                                 tint = if (playlist.description.contains("AI")) NeonCyan else Color.White,
                                 modifier = Modifier.size(18.dp)
