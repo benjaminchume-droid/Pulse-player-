@@ -100,10 +100,10 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Custom visual theme & stats
   const [premiumTheme, setPremiumTheme] = useState<PulseTheme>('cosmic');
   const [userStats, setUserStats] = useState<UserStats>({
-    listeningStreak: 5,
-    xp: 2450,
-    level: 3,
-    unlockedThemes: ['cosmic', 'cyberpunk'],
+    listeningStreak: 0,
+    xp: 0,
+    level: 1,
+    unlockedThemes: ['cosmic'],
     achievements: ALL_ACHIEVEMENTS,
     dailyQuestCompleted: false
   });
@@ -118,7 +118,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     notifications: 'prompt',
     battery: 'prompt'
   });
-  const [bluetoothDevice, setBluetoothDevice] = useState<string | null>("Nothing Ear (a)");
+  const [bluetoothDevice, setBluetoothDevice] = useState<string | null>(null);
 
   const [aiThinking, setAiThinking] = useState(false);
 

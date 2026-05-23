@@ -1,0 +1,66 @@
+name: Compile and Bundle React Web Application
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'vite.config.ts'
+      - 'tsconfig.json'
+      - 'index.html'
+      - '.github/workflows/web_app_build.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  build_web_app:
+    name: Build & Validate React SPA Web App
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the source repository code
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      # Step 2: Set up professional Node.js execution environment
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm' # Auto-enables secure npm dependency caching
+
+      # Step 3: Install dependencies specified in package.json
+      - name: Install Dependencies
+        run: npm ci || npm install # Gracefully fallback to install if package-lock is out of sync
+
+      # Step 4: Run diagnostic TypeScript Compilation Checks (noEmit mode)
+      - name: Verify Type Integrity
+        run: npm run lint
+
+      # Step 5: Build static optimized release assets using Vite
+      - name: Compile and Bundle App
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      # Step 6: Archive and Upload static assets for distribution / direct static deployment
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulse-player-web-dist
+          path: dist/
+          retention-days: 14
+
+      # Step 7: Output visual steps summary on job completion page
+      - name: Generate Output Summary
+        run: |
+          echo "### 🌐 Pulse Player Web App Compiled Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "Your high-fidelity React Single Page Application is fully constructed and optimized." >> $GITHUB_STEP_SUMMARY
+          echo "- **Vite Output Bundle Size**: Optimized and minimized inside static \`/dist\` bundle." >> $GITHUB_STEP_SUMMARY
+          echo "- **Validation Status**: Passed TypeScript target validation cleanly." >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment target**: Production Release Build" >> $GITHUB_STEP_SUMMARY

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Sparkles, Play, ListMusic, Plus, Music2, Share2, Disc } from 'lucide-react';
 import { useAudio } from '../context/AudioContext';
@@ -7,26 +7,23 @@ import { Playlist } from '../types';
 
 export const PlaylistsScreen: React.FC = () => {
   const { songs, play, triggerAIAssistant, aiThinking } = useAudio();
-  const [playlists, setPlaylists] = useState<Playlist[]>([
-    {
-      id: 'pl-1',
-      name: 'Cyberpunk Drive Mix',
-      description: 'Futuristic highway racing basslines',
-      songs: ['demo-2', 'demo-4'],
-      createdAt: Date.now() - 86400000 * 2
-    },
-    {
-      id: 'pl-2',
-      name: 'Alpha Focus Fused',
-      description: 'Luminance ambient signals for code sessions',
-      songs: ['demo-1', 'demo-3'],
-      createdAt: Date.now() - 86400000 * 4
+  const [playlists, setPlaylists] = useState<Playlist[]>(() => {
+    try {
+      const saved = localStorage.getItem('pulse_playlists');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
     }
-  ]);
+  });
 
   const [prompt, setPrompt] = useState('');
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [createdFeedback, setCreatedFeedback] = useState<string | null>(null);
+
+  // Persist playlists
+  useEffect(() => {
+    localStorage.setItem('pulse_playlists', JSON.stringify(playlists));
+  }, [playlists]);
 
   const handleCreatePlaylist = (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,7 +47,7 @@ export const PlaylistsScreen: React.FC = () => {
 
     const responseText = await triggerAIAssistant(prompt);
     
-    // Create actual simulated dynamic smart playlist matching moods
+    // Choose 3 random songs from real library if available
     const randomSongs = [...songs].sort(() => 0.5 - Math.random()).slice(0, 3);
     const aiPL: Playlist = {
       id: crypto.randomUUID(),
@@ -119,34 +116,44 @@ export const PlaylistsScreen: React.FC = () => {
           <h3 className="text-[10px] font-bold uppercase tracking-[0.25em] text-white/40">Mixtures Archives</h3>
         </div>
 
-        <div className="space-y-4">
-          {playlists.map((playlist) => (
-            <div 
-              key={playlist.id}
-              className="p-4 rounded-2xl glass-card border border-white/5 flex items-center justify-between group"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/50 relative overflow-hidden flex-shrink-0">
-                  {playlist.isAiGenerated ? (
-                    <Sparkles size={18} className="text-purple-400 absolute animate-pulse" />
-                  ) : (
-                    <ListMusic size={18} />
-                  )}
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-white group-hover:text-glow">{playlist.name}</h4>
-                  <p className="text-[10px] text-white/40 leading-snug truncate mt-0.5">{playlist.songs.length} Tracks • {playlist.isAiGenerated ? 'AI Synced' : 'Offline Custom'}</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => handlePlayPlaylist(playlist)}
-                className="w-9 h-9 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-all cursor-pointer shadow-lg"
+        {playlists.length > 0 ? (
+          <div className="space-y-4">
+            {playlists.map((playlist) => (
+              <div 
+                key={playlist.id}
+                className="p-4 rounded-2xl glass-card border border-white/5 flex items-center justify-between group"
               >
-                <Play size={14} fill="currentColor" className="ml-0.5" />
-              </button>
-            </div>
-          ))}
-        </div>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/50 relative overflow-hidden flex-shrink-0">
+                    {playlist.isAiGenerated ? (
+                      <Sparkles size={18} className="text-purple-400 absolute animate-pulse" />
+                    ) : (
+                      <ListMusic size={18} />
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-white group-hover:text-glow">{playlist.name}</h4>
+                    <p className="text-[10px] text-white/40 leading-snug truncate mt-0.5">{playlist.songs.length} Tracks • {playlist.isAiGenerated ? 'AI Synced' : 'Offline Custom'}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => handlePlayPlaylist(playlist)}
+                  className="w-9 h-9 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-all cursor-pointer shadow-lg"
+                >
+                  <Play size={14} fill="currentColor" className="ml-0.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-12 px-4 rounded-3xl glass border border-white/5 text-center flex flex-col items-center justify-center gap-3">
+            <ListMusic size={36} className="text-white/20 stroke-[1.5px] animate-pulse" />
+            <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-white/55">No Playlists Found</h4>
+            <p className="text-[10px] text-white/30 max-w-[200px] leading-relaxed mx-auto">
+              Create your first offline mixture or request the AI DJ helper to formulate a personalized stream.
+            </p>
+          </div>
+        )}
       </section>
 
       {/* Manual Creation Box Form */}
