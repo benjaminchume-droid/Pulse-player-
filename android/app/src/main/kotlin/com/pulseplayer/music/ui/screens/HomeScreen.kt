@@ -43,11 +43,17 @@ fun HomeScreen(
     val userXp by viewModel.userXp.collectAsState()
     val streak by viewModel.listeningStreak.collectAsState()
 
+    // Bind to the active global realms system
+    val theme by RealmManager.currentTheme.collectAsState()
+
     val scrollState = rememberScrollState()
 
     // Determine featured song
     val favorites = songs.filter { it.isFavorite }
     val featuredSong = favorites.firstOrNull() ?: songs.firstOrNull()
+
+    val textPrimaryColor = if (theme.isLight) Color.Black else Color.White
+    val textMutedColor = if (theme.isLight) Color.DarkGray.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.5f)
 
     Column(
         modifier = modifier
@@ -59,14 +65,14 @@ fun HomeScreen(
         // Dynamic Greeting
         Column(modifier = Modifier.padding(top = 16.dp)) {
             Text(
-                text = "PULSE VISION",
-                color = TextMuted,
+                text = "PULSE VISION REALMS",
+                color = theme.accentColor,
                 fontWeight = FontWeight.Bold,
                 style = Typography.labelSmall
             )
             Text(
-                text = "${getGreeting()}, Listener",
-                color = TextWhitePrimary,
+                text = "${getGreeting()}, Explorer",
+                color = textPrimaryColor,
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Light
             )
@@ -86,7 +92,7 @@ fun HomeScreen(
                         .fillMaxSize()
                         .background(
                             androidx.compose.ui.graphics.Brush.linearGradient(
-                                colors = listOf(Color(0x33D600FF), Color.Transparent)
+                                colors = listOf(theme.accentColor.copy(alpha = 0.25f), Color.Transparent)
                             )
                         )
                 )
@@ -101,10 +107,10 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(text = "✨", fontSize = 12.sp)
+                        Text(text = theme.glyphEmblems, fontSize = 12.sp)
                         Text(
-                            text = "QUICK AMBIENT STAGE • PLAYBACK READY",
-                            color = TextMuted,
+                            text = "AMBISONIC CORE READY [${theme.soundstageName.uppercase()}]",
+                            color = textMutedColor,
                             style = Typography.labelSmall
                         )
                     }
@@ -112,7 +118,7 @@ fun HomeScreen(
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = featuredSong.title,
-                            color = TextWhitePrimary,
+                            color = textPrimaryColor,
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Light,
                             maxLines = 1,
@@ -120,7 +126,7 @@ fun HomeScreen(
                         )
                         Text(
                             text = featuredSong.artist,
-                            color = TextGraySecondary,
+                            color = theme.accentColor,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -128,14 +134,14 @@ fun HomeScreen(
 
                     Button(
                         onClick = { viewModel.playSong(songs, featuredSong) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = BackgroundDark),
+                        colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor, contentColor = if (theme.isLight) Color.White else Color.Black),
                         shape = RoundedCornerShape(20.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "STREAM FEATURED",
+                            text = "STREAM CHRONIC CORE",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             style = Typography.labelSmall
@@ -157,18 +163,18 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(text = "🎧", fontSize = 32.sp)
+                    Text(text = "🛰️", fontSize = 32.sp)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "No Track Synchronized",
-                        color = TextWhitePrimary,
+                        color = textPrimaryColor,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Please tap scan files inside Library to register media tracks.",
-                        color = TextGraySecondary,
+                        color = textMutedColor,
                         fontSize = 10.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
@@ -184,14 +190,14 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "LEVEL $userLevel",
-                    color = NeonCyan,
+                    text = "LEVEL $userLevel EXPLORER / EXP",
+                    color = theme.accentColor,
                     fontWeight = FontWeight.Bold,
                     style = Typography.labelSmall
                 )
                 Text(
-                    text = "${streak}D STREAK",
-                    color = NeonPurple,
+                    text = "${streak}D LISTENING STREAK",
+                    color = theme.glowColor,
                     fontWeight = FontWeight.Bold,
                     style = Typography.labelSmall
                 )
@@ -203,13 +209,13 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Daily Quest: Listening progress",
-                            color = TextWhitePrimary,
+                            text = "Realms Synchronization Quest Progress",
+                            color = textPrimaryColor,
                             fontSize = 12.sp
                         )
                         Text(
                             text = "$userXp / 1000 XP",
-                            color = Color.White,
+                            color = textPrimaryColor,
                             style = Typography.labelSmall
                         )
                     }
@@ -219,13 +225,13 @@ fun HomeScreen(
                             .fillMaxWidth()
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp))
-                            .background(Color(0x33FFFFFF))
+                            .background(if (theme.isLight) Color(0x33000000) else Color(0x33FFFFFF))
                     ) {
                         Box(
                             modifier = Modifier
                                 .fillMaxHeight()
                                 .fillMaxWidth(fraction = (userXp.toFloat() / 1000f).coerceIn(0f, 1f))
-                                .background(Color.White)
+                                .background(theme.accentColor)
                         )
                     }
                 }
@@ -235,8 +241,8 @@ fun HomeScreen(
         // Recent Files scanned loop list
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
-                text = "RECENT INVENTORY SENSORS",
-                color = TextWhitePrimary,
+                text = "RECENT CORE SENSOR READINGS",
+                color = textPrimaryColor,
                 style = Typography.labelSmall
             )
 
@@ -255,15 +261,16 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .size(120.dp)
                                     .clip(RoundedCornerShape(16.dp))
-                                    .background(Color(0x1AFFFFFF)),
+                                    .background(if (theme.isLight) Color(0x11000000) else Color(0x1AFFFFFF))
+                                    .border(1.dp, theme.accentColor.copy(alpha = 0.15f), RoundedCornerShape(16.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(text = "🎵", fontSize = 36.sp)
+                                Text(text = theme.glyphEmblems, fontSize = 36.sp)
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = song.title,
-                                color = TextWhitePrimary,
+                                color = textPrimaryColor,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
@@ -271,7 +278,7 @@ fun HomeScreen(
                             )
                             Text(
                                 text = song.artist,
-                                color = TextGraySecondary,
+                                color = theme.accentColor,
                                 fontSize = 10.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -282,7 +289,7 @@ fun HomeScreen(
             } else {
                 Text(
                     text = "No newly tracked files. Scanner index empty.",
-                    color = TextMuted,
+                    color = textMutedColor,
                     fontSize = 11.sp,
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
@@ -296,10 +303,10 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Default.Star, contentDescription = null, tint = TextMuted, modifier = Modifier.size(14.dp))
+                Icon(Icons.Default.Star, contentDescription = null, tint = theme.accentColor, modifier = Modifier.size(14.dp))
                 Text(
-                    text = "YOUR FAVORITES RANGE",
-                    color = TextWhitePrimary,
+                    text = "FAVORITES INTEGRATION FIELD",
+                    color = textPrimaryColor,
                     style = Typography.labelSmall
                 )
             }
@@ -311,7 +318,8 @@ fun HomeScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0x0AFFFFFF))
+                                .background(if (theme.isLight) Color(0x06000000) else Color(0x0AFFFFFF))
+                                .border(1.dp, theme.accentColor.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
                                 .clickable { viewModel.playSong(songs, song) }
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -320,16 +328,16 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .size(40.dp)
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0x33FFFFFF)),
+                                    .background(theme.accentColor.copy(alpha = 0.12f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(text = "💜", fontSize = 16.sp)
+                                Text(text = "🎧", fontSize = 16.sp)
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = song.title,
-                                    color = TextWhitePrimary,
+                                    color = textPrimaryColor,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
@@ -337,7 +345,7 @@ fun HomeScreen(
                                 )
                                 Text(
                                     text = song.artist,
-                                    color = TextGraySecondary,
+                                    color = theme.accentColor,
                                     fontSize = 10.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -352,20 +360,20 @@ fun HomeScreen(
                         .fillMaxWidth()
                         .height(100.dp)
                         .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0x05FFFFFF))
-                        .border(1.dp, BorderGlass, RoundedCornerShape(16.dp)),
+                        .background(if (theme.isLight) Color(0x05000000) else Color(0x05FFFFFF))
+                        .border(1.dp, theme.accentColor.copy(alpha = 0.15f), RoundedCornerShape(16.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "No Favorites Tracked Yet",
-                        color = TextMuted,
+                        color = textMutedColor,
                         fontSize = 12.sp,
                         style = Typography.labelSmall
                     )
                 }
             }
         }
-        
+
         Spacer(modifier = Modifier.height(120.dp))
     }
 }
@@ -373,9 +381,9 @@ fun HomeScreen(
 private fun getGreeting(): String {
     val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     return when (hour) {
-        in 0..4 -> "Good Night"
-        in 5..11 -> "Good Morning"
-        in 12..16 -> "Good Afternoon"
-        else -> "Good Evening"
+        in 0..4 -> "Good Astral Night"
+        in 5..11 -> "Good Solar Morning"
+        in 12..16 -> "Good Solar Afternoon"
+        else -> "Good Nebula Evening"
     }
 }
