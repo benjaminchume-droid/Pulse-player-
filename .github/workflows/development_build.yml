@@ -5,65 +5,56 @@ on:
     branches:
       - develop
     paths:
-      - 'lib/**'
-      - 'pubspec.yaml'
       - 'android/**'
       - '.github/workflows/development_build.yml'
-  workflow_dispatch: # Enable manual triggering with custom parameters
+  workflow_dispatch: # Enable manual triggering with custom variables
 
 jobs:
   build_dev_apk:
     name: Build Development Unsigned APK
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: android
+
     steps:
-      # Checkout current repository revision
+      # 1. Checkout repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Set up Java JDK required by Android SDK compilation
+      # 2. Set up Java JDK required by Gradle compiler
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # Configure Flutter environment with internal caching
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.x'
-          channel: 'stable'
-          cache: true
-          cache-key: "flutter-:os:-:channel:-:version:-:arch:-:hash:"
-          cache-path: "${{ runner.tool_cache }}/flutter"
-
-      # Install pubspec modules
-      - name: Install Dependencies
-        run: flutter pub get
-
-      # Setup Gradle Caching for faster incremental compile times
-      - name: Setup Gradle Cache
+      # 3. Setup Gradle with automatic caching and configuration
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.2
 
-      # Build APK strictly optimized for testing / rapid feedback loops (fat debug or split apk)
-      # Uses dev flavor/build configurations if applicable - here we compile standard release split
-      - name: Build Unsigned APK
-        run: flutter build apk --release --split-per-abi
+      # 4. Build custom release APK for developer test installations
+      # Note: This compiles the application in release mode but without signatures, outputting binaries
+      - name: Build Unsigned Release APK
+        run: gradle assembleRelease --no-daemon
 
-      # Upload Android binary artifacts to Actions dashboard
+      # 5. Upload Android binary artifacts to Actions dashboard
       - name: Upload Dev APK Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pulse-player-dev-apks
-          path: build/app/outputs/flutter-apk/app-*.apk
+          path: android/app/build/outputs/apk/release/*.apk
           retention-days: 14
 
-      # Summary output to job page
-      - name: generate-build-summary
+      # 6. Generate detailed dynamic build summary to job run screen
+      - name: Generate Build Summary
         run: |
-          echo "### 🚀 Development Build Succeeded!" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Native Android Development Build Succeeded!" >> $GITHUB_STEP_SUMMARY
           echo "The latest Pulse Player development binaries have been compiled and exported." >> $GITHUB_STEP_SUMMARY
-          echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit SHA**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Artifacts Retained**: 14 Days" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger Event**: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit Identifier**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch Target**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact Storage Duration**: 14 Days" >> $GITHUB_STEP_SUMMARY

@@ -38,27 +38,13 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      # 4. Integrate Flutter and setup automatic build-cache
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      # 4. Setup Gradle with automatic caching and configuration
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
-          flutter-version: '3.x'
-          channel: 'stable'
-          cache: true
-          cache-key: "flutter-:os:-:channel:-:version:-:arch:-:hash:"
-          cache-path: "${{ runner.tool_cache }}/flutter"
+          gradle-version: 8.2
 
-      # 5. Fetch dependencies safely
-      - name: Install Dependencies
-        run: flutter pub get
-
-      # 6. Rigorously run static checks to guarantee release quality
-      - name: Run Quality Verification
-        run: |
-          flutter analyze
-          flutter test
-
-      # 7. Decrypt secure binary properties for App signing (PlayStore compliant)
+      # 5. Decrypt secure binary properties for App signing
       # This step translates the base64 keystore secret back into a physical file
       - name: Decrypt Android Keystore File (jks)
         env:
@@ -72,33 +58,20 @@ jobs:
             echo "Keystore credential successfully written to disk."
           fi
 
-      # 8. Setup Gradle Caching mechanism
-      - name: Setup Gradle Cache
-        uses: gradle/actions/setup-gradle@v4
-
-      # 9. Build signed Android App Bundle (.aab) with dynamic release version numbering
-      - name: Build Signed App Bundle (AAB)
+      # 6. Build securely signed Android App Bundle (.aab) and APK using gradle tasks
+      - name: Build Signed App Assets
         env:
           PULSE_KEY_ALIAS: ${{ secrets.PULSE_KEY_ALIAS }}
           PULSE_KEY_PASSWORD: ${{ secrets.PULSE_KEY_PASSWORD }}
           PULSE_STORE_PASSWORD: ${{ secrets.PULSE_STORE_PASSWORD }}
         run: |
-          flutter build appbundle --release \
-            --build-name="${{ steps.pre_version.outputs.version_name }}" \
-            --build-number="${{ steps.pre_version.outputs.build_number }}"
+          cd android
+          gradle bundleRelease assembleRelease \
+            -PversionCode="${{ steps.pre_version.outputs.build_number }}" \
+            -PversionName="${{ steps.pre_version.outputs.version_name }}" \
+            --no-daemon
 
-      # 10. Build signed Android Universal Split APK
-      - name: Build Signed Universal APK
-        env:
-          PULSE_KEY_ALIAS: ${{ secrets.PULSE_KEY_ALIAS }}
-          PULSE_KEY_PASSWORD: ${{ secrets.PULSE_KEY_PASSWORD }}
-          PULSE_STORE_PASSWORD: ${{ secrets.PULSE_STORE_PASSWORD }}
-        run: |
-          flutter build apk --release \
-            --build-name="${{ steps.pre_version.outputs.version_name }}" \
-            --build-number="${{ steps.pre_version.outputs.build_number }}"
-
-      # 11. Extract Release changelogs dynamically comparing with the previous tag tag
+      # 7. Extract Release changelogs dynamically comparing with the previous tag tag
       - name: Generate Changelog Highlights
         id: git_changelog
         run: |
@@ -115,25 +88,22 @@ jobs:
           echo "$CHANGES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      # 12. Persist signed artifacts safely for distribution verification
+      # 8. Persist signed artifacts safely for distribution verification
       - name: Upload Clean Binaries Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pulse-player-prod-release
           path: |
-            build/app/outputs/bundle/release/app-release.aab
-            build/app/outputs/flutter-apk/app-release.apk
+            android/app/build/outputs/bundle/release/*.aab
+            android/app/build/outputs/apk/release/*.apk
           retention-days: 30
 
-      # 13. Publish official release on GitHub with signed bundles attached
+      # 9. Publish official release on GitHub and upload signed APK & AAB assets in one go
       - name: Create Production Release Entry
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          release_name: "Pulse Player v${{ steps.pre_version.outputs.version_name }}"
+          name: "Pulse Player v${{ steps.pre_version.outputs.version_name }}"
           body: |
             ### 🎧 Pulse Player App Release Update [v${{ steps.pre_version.outputs.version_name }}]
             
@@ -147,27 +117,8 @@ jobs:
             - **\`app-release.aab\`**: Production Google Play Store App Bundle bundle ready for automated indexing.
             
             -- _Automated via GitHub Actions Pipeline_
+          files: |
+            android/app/build/outputs/bundle/release/*.aab
+            android/app/build/outputs/apk/release/*.apk
           draft: false
           prerelease: false
-
-      # 14. Upload App Bundle (.aab) asset directly to the created GitHub release page
-      - name: Upload AAB Asset to GitHub Release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/app/outputs/bundle/release/app-release.aab
-          asset_name: pulse-player-v${{ steps.pre_version.outputs.version_name }}.aab
-          asset_content_type: application/octet-stream
-
-      # 15. Upload APK (.apk) asset directly to the created GitHub release page
-      - name: Upload APK Asset to GitHub Release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/app/outputs/flutter-apk/app-release.apk
-          asset_name: pulse-player-v${{ steps.pre_version.outputs.version_name }}.apk
-          asset_content_type: application/vnd.android.package-archive
