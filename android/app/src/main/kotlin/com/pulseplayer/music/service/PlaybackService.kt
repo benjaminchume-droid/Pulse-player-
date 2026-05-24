@@ -98,6 +98,11 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
     }
 
     fun playSong(song: Song) {
+        try {
+            val intent = Intent(applicationContext, PlaybackService::class.java)
+            applicationContext.startService(intent)
+        } catch (e: Exception) { }
+
         if (!requestAudioFocus()) return
         isPrepared = false
         mediaPlayer?.reset()

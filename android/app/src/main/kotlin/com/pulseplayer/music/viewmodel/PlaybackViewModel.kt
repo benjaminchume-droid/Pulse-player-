@@ -138,7 +138,6 @@ class PlaybackViewModel(
     // Playback Service bindings
     private fun bindPlaybackService() {
         val intent = Intent(context, PlaybackService::class.java)
-        context.startService(intent) // ensures service lifetime independent of binding
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }
 
