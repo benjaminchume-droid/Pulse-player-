@@ -4,6 +4,7 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,6 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pulseplayer.music.data.Song
+import com.pulseplayer.music.ui.components.GlassCard
 import com.pulseplayer.music.ui.theme.*
 import com.pulseplayer.music.viewmodel.PlaybackViewModel
 
@@ -38,18 +40,32 @@ fun LibraryScreen(
     val songs by viewModel.songs.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
 
-    // Setup permission launcher based on Android OS version
-    val requiredPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        Manifest.permission.READ_MEDIA_AUDIO
-    } else {
-        Manifest.permission.READ_EXTERNAL_STORAGE
+    // Determine target permission matrices based on Android SDK level
+    val permissionsToRequest = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            arrayOf(Manifest.permission.READ_MEDIA_AUDIO)
+        } else {
+            arrayOf(
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            )
+        }
     }
 
+    var showExplanationDialog by remember { mutableStateOf(false) }
+    var wasPermissionDenied by remember { mutableStateOf(false) }
+
     val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val anyGranted = results.values.any { it }
+        if (anyGranted) {
+            wasPermissionDenied = false
+            showExplanationDialog = false
             viewModel.scanDeviceAudio()
+        } else {
+            wasPermissionDenied = true
+            showExplanationDialog = true
         }
     }
 
@@ -95,7 +111,7 @@ fun LibraryScreen(
             )
 
             Button(
-                onClick = { launcher.launch(requiredPermission) },
+                onClick = { launcher.launch(permissionsToRequest) },
                 colors = ButtonDefaults.buttonColors(containerColor = NeonPurple, contentColor = Color.White),
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
@@ -114,6 +130,56 @@ fun LibraryScreen(
                     fontWeight = FontWeight.Bold,
                     style = Typography.labelSmall
                 )
+            }
+        }
+
+        if (showExplanationDialog) {
+            GlassCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("⚠️", fontSize = 18.sp)
+                        Text(
+                            text = "STORAGE PERMISSION REQUIRED",
+                            color = NeonCyan,
+                            fontWeight = FontWeight.Bold,
+                            style = Typography.labelSmall
+                        )
+                    }
+                    Text(
+                        text = "Pulse Player operates natively on your local device. To map, cache, and play your audio tracks, we need authorization to access your media library files. Without this, no tracks can be indexed.",
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = { showExplanationDialog = false }) {
+                            Text("DISMISS", color = Color.White.copy(0.6f), fontSize = 11.sp)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = { launcher.launch(permissionsToRequest) },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text("AUTHORIZE SCAN", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
 

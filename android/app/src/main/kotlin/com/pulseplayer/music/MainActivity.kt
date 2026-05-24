@@ -22,6 +22,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
@@ -45,8 +49,8 @@ import com.pulseplayer.music.viewmodel.PlaybackViewModelFactory
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object Home : Screen("home", "Home", Icons.Default.Home)
     object Library : Screen("library", "Library", Icons.Default.List)
-    object Playlists : Screen("playlist", "Playlists", Icons.Default.Star)
     object Search : Screen("search", "Search", Icons.Default.Search)
+    object Mixes : Screen("mixes", "Mixes", Icons.Default.MusicNote)
     object Settings : Screen("settings", "Settings", Icons.Default.Settings)
 }
 
@@ -94,10 +98,25 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel) {
     val navigationItems = listOf(
         Screen.Home,
         Screen.Library,
-        Screen.Playlists,
         Screen.Search,
+        Screen.Mixes,
         Screen.Settings
     )
+
+    // Scroll gesture listener for retractable docking panel
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                val delta = available.y
+                if (delta < -15f) { // Scrolling down
+                    if (isDockVisible) isDockVisible = false
+                } else if (delta > 15f) { // Scrolling up
+                    if (!isDockVisible) isDockVisible = true
+                }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -108,7 +127,8 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel) {
         AnimatedGlowBackground(modifier = Modifier.fillMaxSize())
 
         Scaffold(
-            containerColor = Color.Transparent
+            containerColor = Color.Transparent,
+            modifier = Modifier.nestedScroll(nestedScrollConnection)
         ) { innerPadding ->
             Box(
                 modifier = Modifier
@@ -123,8 +143,8 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel) {
                 ) {
                     composable(Screen.Home.route) { HomeScreen(viewModel) }
                     composable(Screen.Library.route) { LibraryScreen(viewModel) }
-                    composable(Screen.Playlists.route) { PlaylistScreen(viewModel) }
                     composable(Screen.Search.route) { SearchScreen(viewModel) }
+                    composable(Screen.Mixes.route) { MixesScreen(viewModel) }
                     composable(Screen.Settings.route) { SettingsScreen(viewModel) }
                 }
 

@@ -350,7 +350,11 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
             addAction("ACTION_TOGGLE")
             addAction("ACTION_NEXT")
         }
-        registerReceiver(actionsReceiver, filter)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(actionsReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(actionsReceiver, filter)
+        }
     }
 
     override fun onDestroy() {
