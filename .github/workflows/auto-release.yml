@@ -38,9 +38,8 @@ jobs:
       uses: gradle/gradle-build-action@v2
 
     - name: Create Keystore from Secret
-      if: env.ANDROID_KEYSTORE_BASE64 != null
       run: |
-        echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release-key.jks
+        echo "${{ secrets.SIGNING_KEY_STORE_BASE64 }}" | base64 -d > android/app/release-key.jks
         echo "KEYSTORE_PATH=android/app/release-key.jks" >> $GITHUB_ENV
         echo "✅ Keystore created"
 
@@ -48,9 +47,9 @@ jobs:
       run: cd android && gradle assembleRelease
       env:
         KEYSTORE_PATH: android/app/release-key.jks
-        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        PULSE_STORE_PASSWORD: ${{ secrets.PULSE_STORE_PASSWORD }}
+        PULSE_KEY_ALIAS: ${{ secrets.PULSE_KEY_ALIAS }}
+        PULSE_KEY_PASSWORD: ${{ secrets.PULSE_KEY_PASSWORD }}
         GRADLE_OPTS: "-Xmx2048m -XX:MaxMetaspaceSize=512m"
 
     - name: Find APK
