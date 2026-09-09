@@ -3,63 +3,65 @@ name: Production Release
 on:
   push:
     tags:
-      - 'v*' # Trigger build on any release tags matching v1.0.0, v2.1.0-beta, etc.
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version name without v prefix (e.g. 1.0.2)'
+        required: true
+        default: '1.0.2'
 
 jobs:
   production_build_and_release:
     name: Build Signed Binaries & Publish
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Crucial permission required to write and publish GitHub Releases
+      contents: write
 
     steps:
-      # 1. Checkout codebase at exact commit
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Full history needed to generate dynamic changelogs
+          fetch-depth: 0
 
-      # 2. Extract Version Metadata from SemVer Git Tag
-      - name: Extract Release Tag Version Method
+      - name: Extract Release Tag Version
         id: pre_version
         run: |
-          # Strip the 'v' prefix if it exists to get absolute version name
-          TAG_NAME="${GITHUB_REF_NAME}"
-          VERSION_NAME="${TAG_NAME#v}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION_NAME="${{ github.event.inputs.version }}"
+            TAG_NAME="v${VERSION_NAME}"
+          else
+            TAG_NAME="${GITHUB_REF_NAME}"
+            VERSION_NAME="${TAG_NAME#v}"
+          fi
           echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
           echo "version_name=${VERSION_NAME}" >> $GITHUB_OUTPUT
-          # Use run number as sequential build number reference
           echo "build_number=${{ github.run_number }}" >> $GITHUB_OUTPUT
 
-      # 3. Setup Java environment
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # 4. Setup Gradle with automatic caching and configuration
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.2
 
-      # 5. Decrypt secure binary properties for App signing
-      # This step translates the base64 keystore secret back into a physical file
-      - name: Decrypt Android Keystore File (jks)
+      - name: Decrypt Android Keystore
         env:
           SIGNING_KEY_STORE_BASE64: ${{ secrets.SIGNING_KEY_STORE_BASE64 }}
         run: |
           if [ -z "$SIGNING_KEY_STORE_BASE64" ]; then
-            echo "::warning::SIGNING_KEY_STORE_BASE64 is empty! Skipping key files regeneration. Build will proceed in unsigned status."
-          else
-            mkdir -p android/app/keystores
-            echo "$SIGNING_KEY_STORE_BASE64" | base64 --decode > android/app/keystores/release-key.jks
-            echo "Keystore credential successfully written to disk."
+            echo "::error::SIGNING_KEY_STORE_BASE64 secret is missing"
+            exit 1
           fi
+          mkdir -p android/app/keystores
+          echo "$SIGNING_KEY_STORE_BASE64" | base64 --decode > android/app/keystores/release-key.jks
+          ls -la android/app/keystores/release-key.jks
 
-      # 6. Build securely signed Android App Bundle (.aab) and APK using gradle tasks
-      - name: Build Signed App Assets
+      - name: Build Signed APK & AAB
         env:
           PULSE_KEY_ALIAS: ${{ secrets.PULSE_KEY_ALIAS }}
           PULSE_KEY_PASSWORD: ${{ secrets.PULSE_KEY_PASSWORD }}
@@ -70,53 +72,52 @@ jobs:
             -PversionCode="${{ steps.pre_version.outputs.build_number }}" \
             -PversionName="${{ steps.pre_version.outputs.version_name }}" \
             --no-daemon
+          echo "Artifacts:"
+          find app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print
 
-      # 7. Extract Release changelogs dynamically comparing with the previous tag tag
-      - name: Generate Changelog Highlights
+      - name: Generate Changelog
         id: git_changelog
         run: |
-          # Extract commit titles since prior tag, falling back to full logs if first release
-          PREV_TAG=$(git describe --tags --abbrev=0 "${{ github.ref_name }}^" 2>/dev/null || echo "")
+          PREV_TAG=$(git describe --tags --abbrev=0 "${{ steps.pre_version.outputs.tag_name }}^" 2>/dev/null || echo "")
           if [ -n "$PREV_TAG" ]; then
-            CHANGES=$(git log "${PREV_TAG}..${{ github.ref_name }}" --oneline --pretty=format:"- %s")
+            CHANGES=$(git log "${PREV_TAG}..HEAD" --oneline --pretty=format:"- %s" | head -40)
           else
-            CHANGES=$(git log --oneline --max-count=15 --pretty=format:"- %s")
+            CHANGES=$(git log --oneline --max-count=20 --pretty=format:"- %s")
           fi
-          
-          # Handle multiline outputs safely for newer GitHub Actions Runner outputs
-          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          {
+            echo "CHANGELOG<<EOF"
+            echo "$CHANGES"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
-      # 8. Persist signed artifacts safely for distribution verification
-      - name: Upload Clean Binaries Artifacts
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pulse-player-prod-release
+          name: pulse-player-v${{ steps.pre_version.outputs.version_name }}
           path: |
             android/app/build/outputs/bundle/release/*.aab
             android/app/build/outputs/apk/release/*.apk
-          retention-days: 30
+          retention-days: 90
 
-      # 9. Publish official release on GitHub and upload signed APK & AAB assets in one go
-      - name: Create Production Release Entry
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ steps.pre_version.outputs.tag_name }}
           name: "Pulse Player v${{ steps.pre_version.outputs.version_name }}"
+          generate_release_notes: true
           body: |
-            ### 🎧 Pulse Player App Release Update [v${{ steps.pre_version.outputs.version_name }}]
-            
-            Welcome to the newest release candidate of Pulse Player built securely in our automated CI/CD loop.
-            
-            #### 🛠 Release Changelogs
+            ### Pulse Player v${{ steps.pre_version.outputs.version_name }}
+
+            **Velocity Lab** · Built by **Glass Line**
+
+            #### Changelog
             ${{ steps.git_changelog.outputs.CHANGELOG }}
-            
-            #### 📦 Release Artifacts
-            - **\`app-release.apk\`**: Standalone, optimized release binaries for instant sideloading.
-            - **\`app-release.aab\`**: Production Google Play Store App Bundle bundle ready for automated indexing.
-            
-            -- _Automated via GitHub Actions Pipeline_
+
+            #### Artifacts
+            - `app-release.apk` — sideload install
+            - `app-release.aab` — Play Store bundle
+
+            License: MIT
           files: |
             android/app/build/outputs/bundle/release/*.aab
             android/app/build/outputs/apk/release/*.apk
