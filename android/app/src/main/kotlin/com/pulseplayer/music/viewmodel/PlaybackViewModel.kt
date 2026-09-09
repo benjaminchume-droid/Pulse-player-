@@ -14,6 +14,8 @@ import androidx.lifecycle.viewModelScope
 import com.pulseplayer.music.data.MusicDao
 import com.pulseplayer.music.data.Playlist
 import com.pulseplayer.music.data.Song
+import com.pulseplayer.music.lyrics.LyricsRepository
+import com.pulseplayer.music.metadata.MetadataEnricher
 import com.pulseplayer.music.service.PlaybackService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,7 +31,6 @@ class PlaybackViewModel(
     private var playbackService: PlaybackService? = null
     @Volatile private var isBound = false
 
-    // State Flows backing the beautiful reactive Jetpack Compose screen loop
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
     val songs: StateFlow<List<Song>> = _songs
 
@@ -48,7 +49,12 @@ class PlaybackViewModel(
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning
 
-    // Onboarding and User stats simulation matching web
+    private val _isEnriching = MutableStateFlow(false)
+    val isEnriching: StateFlow<Boolean> = _isEnriching
+
+    private val _lyricsLoading = MutableStateFlow(false)
+    val lyricsLoading: StateFlow<Boolean> = _lyricsLoading
+
     private val _userLevel = MutableStateFlow(1)
     val userLevel: StateFlow<Int> = _userLevel
 
@@ -66,8 +72,7 @@ class PlaybackViewModel(
     private fun loadCachedData() {
         viewModelScope.launch {
             try {
-                val cachedSongs = musicDao.getAllSongs()
-                _songs.value = cachedSongs
+                _songs.value = musicDao.getAllSongs()
                 _playlists.value = musicDao.getAllPlaylists()
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -75,7 +80,6 @@ class PlaybackViewModel(
         }
     }
 
-    // MediaStore content scanning core mechanics
     fun scanDeviceAudio() {
         if (_isScanning.value) return
         _isScanning.value = true
@@ -87,7 +91,6 @@ class PlaybackViewModel(
                 val uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
                 val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
                 val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
-
                 val projection = arrayOf(
                     MediaStore.Audio.Media._ID,
                     MediaStore.Audio.Media.TITLE,
@@ -107,25 +110,18 @@ class PlaybackViewModel(
                     val dataCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
 
                     while (c.moveToNext()) {
-                        val id = c.getLong(idCol)
-                        val title = c.getString(titleCol) ?: "Unnamed Track"
-                        val artist = c.getString(artistCol) ?: "Unknown Artist"
-                        val album = c.getString(albumCol) ?: "Unknown Album"
-                        val duration = c.getLong(durationCol)
                         val path = c.getString(dataCol) ?: ""
-
-                        if (path.isNotEmpty()) {
-                            fetchedSongs.add(
-                                Song(
-                                    id = id,
-                                    title = title,
-                                    artist = artist,
-                                    album = album,
-                                    duration = duration,
-                                    path = path
-                                )
+                        if (path.isEmpty()) continue
+                        fetchedSongs.add(
+                            Song(
+                                id = c.getLong(idCol),
+                                title = c.getString(titleCol) ?: "Unnamed Track",
+                                artist = c.getString(artistCol) ?: "Unknown Artist",
+                                album = c.getString(albumCol) ?: "Unknown Album",
+                                duration = c.getLong(durationCol),
+                                path = path
                             )
-                        }
+                        )
                     }
                 }
 
@@ -136,14 +132,92 @@ class PlaybackViewModel(
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
-                withContext(Dispatchers.Main) {
-                    _isScanning.value = false
-                }
+                withContext(Dispatchers.Main) { _isScanning.value = false }
             }
         }
     }
 
-    // Playback Service bindings
+    /** Enrich one song from embedded tags + MusicBrainz */
+    fun enrichSongMetadata(song: Song) {
+        viewModelScope.launch {
+            try {
+                val meta = MetadataEnricher.enrich(context, song)
+                musicDao.updateMetadata(
+                    id = song.id,
+                    title = meta.title,
+                    artist = meta.artist,
+                    album = meta.album,
+                    albumArtist = meta.albumArtist,
+                    year = meta.year,
+                    genre = meta.genre,
+                    coverUrl = meta.coverUrl
+                )
+                _songs.value = musicDao.getAllSongs()
+                if (_currentSong.value?.id == song.id) {
+                    _currentSong.value = musicDao.getSongById(song.id)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    /** Batch enrich library (skips already enriched) */
+    fun enrichAllMetadata() {
+        if (_isEnriching.value) return
+        _isEnriching.value = true
+        viewModelScope.launch {
+            try {
+                val list = musicDao.getAllSongs().filter { !it.metadataEnriched }
+                list.forEach { song ->
+                    try {
+                        val meta = MetadataEnricher.enrich(context, song)
+                        musicDao.updateMetadata(
+                            id = song.id,
+                            title = meta.title,
+                            artist = meta.artist,
+                            album = meta.album,
+                            albumArtist = meta.albumArtist,
+                            year = meta.year,
+                            genre = meta.genre,
+                            coverUrl = meta.coverUrl
+                        )
+                    } catch (_: Exception) {}
+                }
+                _songs.value = musicDao.getAllSongs()
+            } finally {
+                _isEnriching.value = false
+            }
+        }
+    }
+
+    /** Fetch lyrics for a song and store in DB */
+    fun fetchLyricsFor(song: Song) {
+        if (_lyricsLoading.value) return
+        _lyricsLoading.value = true
+        viewModelScope.launch {
+            try {
+                val result = LyricsRepository.fetchLyrics(
+                    title = song.title,
+                    artist = song.artist,
+                    album = song.album,
+                    durationSec = (song.duration / 1000).toInt()
+                )
+                if (result != null) {
+                    musicDao.updateLyrics(song.id, result.plain, result.synced)
+                    _songs.value = musicDao.getAllSongs()
+                    if (_currentSong.value?.id == song.id) {
+                        _currentSong.value = musicDao.getSongById(song.id)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                _lyricsLoading.value = false
+            }
+        }
+    }
+
     private fun bindPlaybackService() {
         if (isBound) return
         try {
@@ -167,45 +241,34 @@ class PlaybackViewModel(
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            try {
-                playbackService?.removeListener(this@PlaybackViewModel)
-            } catch (_: Exception) {}
+            try { playbackService?.removeListener(this@PlaybackViewModel) } catch (_: Exception) {}
             playbackService = null
             isBound = false
         }
     }
 
-    // Controls bridges
     fun playSong(songsList: List<Song>, songToPlay: Song) {
         val index = songsList.indexOf(songToPlay)
         playbackService?.setQueue(songsList, if (index != -1) index else 0)
-
-        // Dynamic Reward Metric integration
         viewModelScope.launch {
             try {
                 musicDao.incrementPlayCount(songToPlay.id)
                 incrementExperiencePoints()
+                // Auto-fetch lyrics if missing
+                val fresh = musicDao.getSongById(songToPlay.id)
+                if (fresh != null && fresh.lyrics.isBlank() && fresh.syncedLyrics.isBlank()) {
+                    fetchLyricsFor(fresh)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
     }
 
-    fun togglePlayPause() {
-        playbackService?.togglePlayPause()
-    }
-
-    fun skipNext() {
-        playbackService?.skipNext()
-    }
-
-    fun skipPrevious() {
-        playbackService?.skipPrevious()
-    }
-
-    fun seekTo(positionMs: Long) {
-        playbackService?.seekTo(positionMs)
-    }
+    fun togglePlayPause() { playbackService?.togglePlayPause() }
+    fun skipNext() { playbackService?.skipNext() }
+    fun skipPrevious() { playbackService?.skipPrevious() }
+    fun seekTo(positionMs: Long) { playbackService?.seekTo(positionMs) }
 
     fun toggleFavorite(song: Song) {
         viewModelScope.launch {
@@ -225,8 +288,7 @@ class PlaybackViewModel(
     fun createPlaylist(name: String, description: String = "", songIds: List<Long> = emptyList()) {
         viewModelScope.launch {
             try {
-                val playlist = Playlist(name = name, description = description, songIds = songIds)
-                musicDao.insertPlaylist(playlist)
+                musicDao.insertPlaylist(Playlist(name = name, description = description, songIds = songIds))
                 _playlists.value = musicDao.getAllPlaylists()
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -234,7 +296,6 @@ class PlaybackViewModel(
         }
     }
 
-    // Gamification level progress tracker matching React specs
     private fun incrementExperiencePoints() {
         _userXp.value += 150
         if (_userXp.value >= 1000) {
@@ -244,18 +305,9 @@ class PlaybackViewModel(
         _listeningStreak.value = (_listeningStreak.value + 1).coerceAtMost(30)
     }
 
-    // Callback listeners implementing PlaybackService notifications standard
-    override fun onSongChanged(song: Song?) {
-        _currentSong.value = song
-    }
-
-    override fun onPlaybackStatusChanged(isPlaying: Boolean) {
-        _isPlaying.value = isPlaying
-    }
-
-    override fun onPositionUpdate(positionMs: Long) {
-        _playbackPosition.value = positionMs
-    }
+    override fun onSongChanged(song: Song?) { _currentSong.value = song }
+    override fun onPlaybackStatusChanged(isPlaying: Boolean) { _isPlaying.value = isPlaying }
+    override fun onPositionUpdate(positionMs: Long) { _playbackPosition.value = positionMs }
 
     override fun onCleared() {
         super.onCleared()
