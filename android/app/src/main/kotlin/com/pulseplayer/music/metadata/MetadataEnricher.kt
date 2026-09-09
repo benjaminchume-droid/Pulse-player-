@@ -2,6 +2,7 @@ package com.pulseplayer.music.metadata
 
 import android.content.Context
 import android.media.MediaMetadataRetriever
+import android.net.Uri
 import com.pulseplayer.music.data.Song
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -23,12 +24,8 @@ data class EnrichedMetadata(
 
 object MetadataEnricher {
 
-    /**
-     * 1) Read embedded tags from the file via MediaMetadataRetriever
-     * 2) If still weak (Unknown / empty), query MusicBrainz recording search
-     */
     suspend fun enrich(context: Context, song: Song): EnrichedMetadata = withContext(Dispatchers.IO) {
-        val fromFile = readEmbedded(song.path)
+        val fromFile = readEmbedded(context, song.path)
         var title = fromFile.title.ifBlank { cleanTitleFromFilename(song.path) }.ifBlank { song.title }
         var artist = fromFile.artist.ifBlank { song.artist }.let {
             if (it.equals("Unknown Artist", true) || it.equals("<unknown>", true)) "" else it
@@ -42,7 +39,6 @@ object MetadataEnricher {
         var coverUrl = song.coverUrl
         var trackNumber = fromFile.trackNumber
 
-        // Online lookup when tags are thin
         if (artist.isBlank() || album.isBlank() || title.isBlank()) {
             val online = searchMusicBrainz(title, artist)
             if (online != null) {
@@ -56,7 +52,6 @@ object MetadataEnricher {
             }
         }
 
-        // Cover from Cover Art Archive if we got an MB release later — keep simple for now
         EnrichedMetadata(
             title = title.ifBlank { song.title },
             artist = artist.ifBlank { "Unknown Artist" },
@@ -69,10 +64,14 @@ object MetadataEnricher {
         )
     }
 
-    private fun readEmbedded(path: String): EnrichedMetadata {
+    private fun readEmbedded(context: Context, path: String): EnrichedMetadata {
         val r = MediaMetadataRetriever()
         return try {
-            r.setDataSource(path)
+            if (path.startsWith("content://") || path.startsWith("file://")) {
+                r.setDataSource(context, Uri.parse(path))
+            } else {
+                r.setDataSource(path)
+            }
             val title = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE).orEmpty()
             val artist = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST).orEmpty()
             val album = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM).orEmpty()
@@ -93,7 +92,7 @@ object MetadataEnricher {
     private fun cleanTitleFromFilename(path: String): String {
         val name = path.substringAfterLast('/').substringBeforeLast('.')
         return name
-            .replace(Regex("^\\d+[\-_\.\s]+"), "")
+            .replace(Regex("^\\d+[\\-_\\.\\s]+"), "")
             .replace('_', ' ')
             .replace(Regex("\\s+"), " ")
             .trim()
@@ -129,8 +128,6 @@ object MetadataEnricher {
             val rec = recordings.getJSONObject(0)
             val t = rec.optString("title", title)
             var a = artist
-            val credit = rec.optJSONObject("artist-credit")
-            // artist-credit is array in MB JSON
             val credits = rec.optJSONArray("artist-credit")
             if (credits != null && credits.length() > 0) {
                 a = credits.getJSONObject(0).optJSONObject("artist")?.optString("name") ?: a
@@ -141,8 +138,7 @@ object MetadataEnricher {
             if (releases != null && releases.length() > 0) {
                 val rel = releases.getJSONObject(0)
                 album = rel.optString("title", "")
-                val date = rel.optString("date", "")
-                year = date.take(4).toIntOrNull() ?: 0
+                year = rel.optString("date", "").take(4).toIntOrNull() ?: 0
             }
             return EnrichedMetadata(
                 title = t,
