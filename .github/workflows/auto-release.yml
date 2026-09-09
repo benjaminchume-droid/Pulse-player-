@@ -15,11 +15,11 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Extract version from build.gradle.kts
+    - name: Extract version from build.gradle
       id: version
       run: |
-        VERSION_NAME=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts || echo "1.0.0")
-        VERSION_CODE=$(grep -oP 'versionCode = \K\d+' android/app/build.gradle.kts || echo "1")
+        VERSION_NAME=$(grep -oP 'versionName "\K[^"]+' android/app/build.gradle || echo "1.0.0")
+        VERSION_CODE=$(grep -oP 'versionCode \K\d+' android/app/build.gradle || echo "1")
         echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
         echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
         echo "Detected version: $VERSION_NAME (code: $VERSION_CODE)"
@@ -53,10 +53,7 @@ jobs:
           ## Pulse Player v${{ steps.version.outputs.version_name }}
           
           ### 🎉 Changes in this Release
-          - Download integration with real-time progress
-          - Spotify/YouTube Music web extraction
-          - Offline library with auto-playlist
-          - Streaming icon in navigation
+          Auto-generated release with latest changes from main branch.
           
           ### 📦 Build Info
           - Version: ${{ steps.version.outputs.version_name }}
