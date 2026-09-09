@@ -6,8 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
-@Database(entities = [Song::class, Playlist::class], version = 2, exportSchema = false)
-@TypeConverters(Converters::class)
+@Database(entities = [Song::class, Playlist::class], version = 3, exportSchema = false)
+@TypeConverters(SongIdListConverter::class)
 abstract class MusicDatabase : RoomDatabase() {
     abstract fun musicDao(): MusicDao
 

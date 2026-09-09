@@ -7,8 +7,17 @@ interface MusicDao {
     @Query("SELECT * FROM songs ORDER BY title ASC")
     suspend fun getAllSongs(): List<Song>
 
+    @Query("SELECT * FROM songs WHERE isDownloaded = 1 ORDER BY title ASC")
+    suspend fun getDownloadedSongs(): List<Song>
+
+    @Query("SELECT * FROM songs WHERE sourceType = 'stream' ORDER BY addedAt DESC")
+    suspend fun getStreamSongs(): List<Song>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSongs(songs: List<Song>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSong(song: Song)
 
     @Update
     suspend fun updateSong(song: Song)
@@ -31,24 +40,27 @@ interface MusicDao {
         coverUrl = :coverUrl, metadataEnriched = 1 WHERE id = :id
     """)
     suspend fun updateMetadata(
-        id: Long,
-        title: String,
-        artist: String,
-        album: String,
-        albumArtist: String,
-        year: Int,
-        genre: String,
-        coverUrl: String
+        id: Long, title: String, artist: String, album: String,
+        albumArtist: String, year: Int, genre: String, coverUrl: String
     )
 
     @Query("SELECT * FROM songs WHERE id = :id LIMIT 1")
     suspend fun getSongById(id: Long): Song?
 
+    @Query("SELECT DISTINCT album FROM songs WHERE album != '' AND album != 'Unknown Album' ORDER BY album ASC")
+    suspend fun getAlbums(): List<String>
+
+    @Query("SELECT * FROM songs WHERE album = :album ORDER BY trackNumber ASC, title ASC")
+    suspend fun getSongsByAlbum(album: String): List<Song>
+
     @Query("SELECT * FROM playlists ORDER BY createdAt DESC")
     suspend fun getAllPlaylists(): List<Playlist>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertPlaylist(playlist: Playlist)
+    suspend fun insertPlaylist(playlist: Playlist): Long
+
+    @Update
+    suspend fun updatePlaylist(playlist: Playlist)
 
     @Delete
     suspend fun deletePlaylist(playlist: Playlist)

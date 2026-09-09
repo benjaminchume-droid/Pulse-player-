@@ -14,10 +14,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.pulseplayer.music.data.MusicDao
 import com.pulseplayer.music.data.Playlist
+import com.pulseplayer.music.data.RepeatMode
 import com.pulseplayer.music.data.Song
 import com.pulseplayer.music.lyrics.LyricsRepository
 import com.pulseplayer.music.metadata.MetadataEnricher
 import com.pulseplayer.music.service.PlaybackService
+import com.pulseplayer.music.sources.SourceRegistry
+import com.pulseplayer.music.sources.StreamResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,6 +60,15 @@ class PlaybackViewModel(
     private val _lyricsLoading = MutableStateFlow(false)
     val lyricsLoading: StateFlow<Boolean> = _lyricsLoading
 
+    private val _repeatMode = MutableStateFlow(RepeatMode.OFF)
+    val repeatMode: StateFlow<RepeatMode> = _repeatMode
+
+    private val _searchResults = MutableStateFlow<List<StreamResult>>(emptyList())
+    val searchResults: StateFlow<List<StreamResult>> = _searchResults
+
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching
+
     private val _userLevel = MutableStateFlow(1)
     val userLevel: StateFlow<Int> = _userLevel
 
@@ -65,6 +77,9 @@ class PlaybackViewModel(
 
     private val _listeningStreak = MutableStateFlow(0)
     val listeningStreak: StateFlow<Int> = _listeningStreak
+
+    private val _crossfadeSeconds = MutableStateFlow(0)
+    val crossfadeSeconds: StateFlow<Int> = _crossfadeSeconds
 
     init {
         loadCachedData()
@@ -85,14 +100,12 @@ class PlaybackViewModel(
     fun scanDeviceAudio() {
         if (_isScanning.value) return
         _isScanning.value = true
-
         viewModelScope.launch(Dispatchers.IO) {
-            val fetchedSongs = mutableListOf<Song>()
+            val fetched = mutableListOf<Song>()
             try {
-                val contentResolver: ContentResolver = context.contentResolver
+                val cr: ContentResolver = context.contentResolver
                 val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
                 val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
-                val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
                 val projection = arrayOf(
                     MediaStore.Audio.Media._ID,
                     MediaStore.Audio.Media.TITLE,
@@ -101,39 +114,31 @@ class PlaybackViewModel(
                     MediaStore.Audio.Media.DURATION,
                     MediaStore.Audio.Media.DATA
                 )
-
-                val cursor: Cursor? = contentResolver.query(collection, projection, selection, null, sortOrder)
+                val cursor: Cursor? = cr.query(collection, projection, selection, null, "${MediaStore.Audio.Media.TITLE} ASC")
                 cursor?.use { c ->
                     val idCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                     val titleCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                     val artistCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
                     val albumCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
                     val durationCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-                    val dataCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-
                     while (c.moveToNext()) {
                         val id = c.getLong(idCol)
-                        // Prefer content:// URI — works on scoped storage; fall back to DATA path
-                        val contentUri = Uri.withAppendedPath(collection, id.toString()).toString()
-                        val filePath = c.getString(dataCol)
-                        val path = contentUri.ifBlank { filePath ?: "" }
-                        if (path.isEmpty()) continue
-
-                        fetchedSongs.add(
+                        val path = Uri.withAppendedPath(collection, id.toString()).toString()
+                        fetched.add(
                             Song(
                                 id = id,
                                 title = c.getString(titleCol) ?: "Unnamed Track",
                                 artist = c.getString(artistCol) ?: "Unknown Artist",
                                 album = c.getString(albumCol) ?: "Unknown Album",
                                 duration = c.getLong(durationCol),
-                                path = path
+                                path = path,
+                                sourceType = "local"
                             )
                         )
                     }
                 }
-
-                if (fetchedSongs.isNotEmpty()) {
-                    musicDao.insertSongs(fetchedSongs)
+                if (fetched.isNotEmpty()) {
+                    musicDao.insertSongs(fetched)
                     _songs.value = musicDao.getAllSongs()
                 }
             } catch (e: Exception) {
@@ -148,20 +153,13 @@ class PlaybackViewModel(
         viewModelScope.launch {
             try {
                 val meta = MetadataEnricher.enrich(context, song)
-                musicDao.updateMetadata(
-                    id = song.id,
-                    title = meta.title,
-                    artist = meta.artist,
-                    album = meta.album,
-                    albumArtist = meta.albumArtist,
-                    year = meta.year,
-                    genre = meta.genre,
-                    coverUrl = meta.coverUrl
-                )
-                _songs.value = musicDao.getAllSongs()
-                if (_currentSong.value?.id == song.id) {
-                    _currentSong.value = musicDao.getSongById(song.id)
+                musicDao.updateMetadata(song.id, meta.title, meta.artist, meta.album, meta.albumArtist, meta.year, meta.genre, meta.coverUrl)
+                if (song.lyrics.isBlank() && song.syncedLyrics.isBlank()) {
+                    val lyrics = LyricsRepository.fetchLyrics(meta.title, meta.artist, meta.album, (song.duration / 1000).toInt())
+                    if (lyrics != null) musicDao.updateLyrics(song.id, lyrics.plain, lyrics.synced)
                 }
+                _songs.value = musicDao.getAllSongs()
+                if (_currentSong.value?.id == song.id) _currentSong.value = musicDao.getSongById(song.id)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -173,19 +171,14 @@ class PlaybackViewModel(
         _isEnriching.value = true
         viewModelScope.launch {
             try {
-                musicDao.getAllSongs().filter { !it.metadataEnriched }.forEach { song ->
+                musicDao.getAllSongs().forEach { song ->
                     try {
                         val meta = MetadataEnricher.enrich(context, song)
-                        musicDao.updateMetadata(
-                            id = song.id,
-                            title = meta.title,
-                            artist = meta.artist,
-                            album = meta.album,
-                            albumArtist = meta.albumArtist,
-                            year = meta.year,
-                            genre = meta.genre,
-                            coverUrl = meta.coverUrl
-                        )
+                        musicDao.updateMetadata(song.id, meta.title, meta.artist, meta.album, meta.albumArtist, meta.year, meta.genre, meta.coverUrl)
+                        if (song.lyrics.isBlank() && song.syncedLyrics.isBlank()) {
+                            val lyrics = LyricsRepository.fetchLyrics(meta.title, meta.artist, meta.album, (song.duration / 1000).toInt())
+                            if (lyrics != null) musicDao.updateLyrics(song.id, lyrics.plain, lyrics.synced)
+                        }
                     } catch (_: Exception) {}
                 }
                 _songs.value = musicDao.getAllSongs()
@@ -200,18 +193,11 @@ class PlaybackViewModel(
         _lyricsLoading.value = true
         viewModelScope.launch {
             try {
-                val result = LyricsRepository.fetchLyrics(
-                    title = song.title,
-                    artist = song.artist,
-                    album = song.album,
-                    durationSec = (song.duration / 1000).toInt()
-                )
+                val result = LyricsRepository.fetchLyrics(song.title, song.artist, song.album, (song.duration / 1000).toInt())
                 if (result != null) {
                     musicDao.updateLyrics(song.id, result.plain, result.synced)
                     _songs.value = musicDao.getAllSongs()
-                    if (_currentSong.value?.id == song.id) {
-                        _currentSong.value = musicDao.getSongById(song.id)
-                    }
+                    if (_currentSong.value?.id == song.id) _currentSong.value = musicDao.getSongById(song.id)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -221,11 +207,87 @@ class PlaybackViewModel(
         }
     }
 
+    fun searchOnline(query: String, sourceId: String? = null) {
+        if (query.isBlank()) {
+            _searchResults.value = emptyList()
+            return
+        }
+        _isSearching.value = true
+        viewModelScope.launch {
+            try {
+                val plugins = if (sourceId != null) {
+                    SourceRegistry.all.filter { it.id == sourceId }
+                } else SourceRegistry.all
+                val results = plugins.flatMap { p ->
+                    try { p.search(query) } catch (_: Exception) { emptyList() }
+                }
+                _searchResults.value = results
+            } finally {
+                _isSearching.value = false
+            }
+        }
+    }
+
+    fun playStreamResult(result: StreamResult) {
+        if (!result.canStreamInApp || result.streamUrl.isBlank()) {
+            if (result.externalUrl.isNotBlank()) {
+                SourceRegistry.openExternal(context, result.externalUrl)
+            }
+            return
+        }
+        val song = Song(
+            id = result.id.hashCode().toLong(),
+            title = result.title,
+            artist = result.artist,
+            album = result.album,
+            duration = result.durationMs,
+            path = result.streamUrl,
+            coverUrl = result.coverUrl,
+            sourceType = "stream",
+            sourceId = result.source
+        )
+        viewModelScope.launch {
+            musicDao.insertSong(song)
+            _songs.value = musicDao.getAllSongs()
+        }
+        playSong(listOf(song), song)
+    }
+
+    fun createPlaylist(name: String, description: String = "", songIds: List<Long> = emptyList()) {
+        viewModelScope.launch {
+            musicDao.insertPlaylist(Playlist(name = name, description = description, songIds = songIds))
+            _playlists.value = musicDao.getAllPlaylists()
+        }
+    }
+
+    fun addSongToPlaylist(playlistId: Long, songId: Long) {
+        viewModelScope.launch {
+            val pl = musicDao.getPlaylistById(playlistId) ?: return@launch
+            if (songId !in pl.songIds) {
+                musicDao.updatePlaylist(pl.copy(songIds = pl.songIds + songId))
+                _playlists.value = musicDao.getAllPlaylists()
+            }
+        }
+    }
+
+    fun playPlaylist(playlist: Playlist) {
+        viewModelScope.launch {
+            val tracks = playlist.songIds.mapNotNull { musicDao.getSongById(it) }
+            if (tracks.isNotEmpty()) playSong(tracks, tracks.first())
+        }
+    }
+
+    fun playAlbum(album: String) {
+        viewModelScope.launch {
+            val tracks = musicDao.getSongsByAlbum(album)
+            if (tracks.isNotEmpty()) playSong(tracks, tracks.first())
+        }
+    }
+
     private fun bindPlaybackService() {
         if (isBound) return
         try {
-            val intent = Intent(context, PlaybackService::class.java)
-            context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+            context.bindService(Intent(context, PlaybackService::class.java), serviceConnection, Context.BIND_AUTO_CREATE)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -233,21 +295,17 @@ class PlaybackViewModel(
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            try {
-                val binder = service as? PlaybackService.LocalBinder ?: return
-                playbackService = binder.getService()
-                playbackService?.addListener(this@PlaybackViewModel)
-                isBound = true
-                pendingPlay?.let { (list, song) ->
-                    pendingPlay = null
-                    val index = list.indexOf(song)
-                    playbackService?.setQueue(list, if (index != -1) index else 0)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
+            val binder = service as? PlaybackService.LocalBinder ?: return
+            playbackService = binder.getService()
+            playbackService?.addListener(this@PlaybackViewModel)
+            isBound = true
+            playbackService?.setCrossfadeSeconds(_crossfadeSeconds.value)
+            pendingPlay?.let { (list, song) ->
+                pendingPlay = null
+                val index = list.indexOf(song)
+                playbackService?.setQueue(list, if (index != -1) index else 0)
             }
         }
-
         override fun onServiceDisconnected(name: ComponentName?) {
             try { playbackService?.removeListener(this@PlaybackViewModel) } catch (_: Exception) {}
             playbackService = null
@@ -256,10 +314,8 @@ class PlaybackViewModel(
     }
 
     fun playSong(songsList: List<Song>, songToPlay: Song) {
-        // Optimistic UI so Now Playing opens immediately
         _currentSong.value = songToPlay
         _playbackPosition.value = 0L
-
         val svc = playbackService
         if (svc != null && isBound) {
             val index = songsList.indexOf(songToPlay)
@@ -268,7 +324,6 @@ class PlaybackViewModel(
             pendingPlay = songsList to songToPlay
             bindPlaybackService()
         }
-
         viewModelScope.launch {
             try {
                 musicDao.incrementPlayCount(songToPlay.id)
@@ -283,6 +338,24 @@ class PlaybackViewModel(
         }
     }
 
+    fun queuePlayNext(song: Song) {
+        playbackService?.queuePlayNext(song)
+    }
+
+    fun cycleRepeatMode() {
+        val mode = playbackService?.cycleRepeatMode() ?: return
+        _repeatMode.value = mode
+    }
+
+    fun setSleepTimerMinutes(minutes: Int) {
+        playbackService?.setSleepTimerMinutes(minutes)
+    }
+
+    fun setCrossfadeSeconds(sec: Int) {
+        _crossfadeSeconds.value = sec.coerceIn(0, 25)
+        playbackService?.setCrossfadeSeconds(sec)
+    }
+
     fun togglePlayPause() { playbackService?.togglePlayPause() }
     fun skipNext() { playbackService?.skipNext() }
     fun skipPrevious() { playbackService?.skipPrevious() }
@@ -290,26 +363,11 @@ class PlaybackViewModel(
 
     fun toggleFavorite(song: Song) {
         viewModelScope.launch {
-            try {
-                val nextFav = !song.isFavorite
-                musicDao.updateFavorite(song.id, nextFav)
-                _songs.value = musicDao.getAllSongs()
-                if (_currentSong.value?.id == song.id) {
-                    _currentSong.value = _currentSong.value?.copy(isFavorite = nextFav)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    fun createPlaylist(name: String, description: String = "", songIds: List<Long> = emptyList()) {
-        viewModelScope.launch {
-            try {
-                musicDao.insertPlaylist(Playlist(name = name, description = description, songIds = songIds))
-                _playlists.value = musicDao.getAllPlaylists()
-            } catch (e: Exception) {
-                e.printStackTrace()
+            val next = !song.isFavorite
+            musicDao.updateFavorite(song.id, next)
+            _songs.value = musicDao.getAllSongs()
+            if (_currentSong.value?.id == song.id) {
+                _currentSong.value = _currentSong.value?.copy(isFavorite = next)
             }
         }
     }
@@ -326,6 +384,7 @@ class PlaybackViewModel(
     override fun onSongChanged(song: Song?) { _currentSong.value = song }
     override fun onPlaybackStatusChanged(isPlaying: Boolean) { _isPlaying.value = isPlaying }
     override fun onPositionUpdate(positionMs: Long) { _playbackPosition.value = positionMs }
+    override fun onRepeatModeChanged(mode: RepeatMode) { _repeatMode.value = mode }
 
     override fun onCleared() {
         super.onCleared()
@@ -351,6 +410,6 @@ class PlaybackViewModelFactory(
             @Suppress("UNCHECKED_CAST")
             return PlaybackViewModel(context, musicDao) as T
         }
-        throw IllegalArgumentException("Unknown ViewModel class representation")
+        throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
