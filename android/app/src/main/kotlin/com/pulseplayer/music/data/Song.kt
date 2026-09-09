@@ -15,13 +15,18 @@ data class Song(
     var isFavorite: Boolean = false,
     var playCount: Int = 0,
     val addedAt: Long = System.currentTimeMillis(),
-    // Metadata enrichment + lyrics
     val albumArtist: String = "",
     val year: Int = 0,
     val trackNumber: Int = 0,
     val bitrate: Int = 0,
     val coverUrl: String = "",
     val lyrics: String = "",
-    val syncedLyrics: String = "", // LRC format
-    val metadataEnriched: Boolean = false
+    val syncedLyrics: String = "",
+    val metadataEnriched: Boolean = false,
+    /** local | stream | download */
+    val sourceType: String = "local",
+    val sourceId: String = "",
+    val isDownloaded: Boolean = false
 )
+
+enum class RepeatMode { OFF, ONE, ALL }
