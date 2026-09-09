@@ -27,7 +27,7 @@ class PlaybackViewModel(
 ) : ViewModel(), PlaybackService.PlaybackListener {
 
     private var playbackService: PlaybackService? = null
-    private var isBound = false
+    @Volatile private var isBound = false
 
     // State Flows backing the beautiful reactive Jetpack Compose screen loop
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
@@ -65,9 +65,13 @@ class PlaybackViewModel(
 
     private fun loadCachedData() {
         viewModelScope.launch {
-            val cachedSongs = musicDao.getAllSongs()
-            _songs.value = cachedSongs
-            _playlists.value = musicDao.getAllPlaylists()
+            try {
+                val cachedSongs = musicDao.getAllSongs()
+                _songs.value = cachedSongs
+                _playlists.value = musicDao.getAllPlaylists()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -78,79 +82,94 @@ class PlaybackViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             val fetchedSongs = mutableListOf<Song>()
-            val contentResolver: ContentResolver = context.contentResolver
-            val uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-            val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
-            val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
-            
-            val projection = arrayOf(
-                MediaStore.Audio.Media._ID,
-                MediaStore.Audio.Media.TITLE,
-                MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media.ALBUM,
-                MediaStore.Audio.Media.DURATION,
-                MediaStore.Audio.Media.DATA
-            )
+            try {
+                val contentResolver: ContentResolver = context.contentResolver
+                val uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
+                val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
 
-            val cursor: Cursor? = contentResolver.query(uri, projection, selection, null, sortOrder)
-            cursor?.use { c ->
-                val idCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-                val titleCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-                val artistCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-                val albumCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-                val durationCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-                val dataCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+                val projection = arrayOf(
+                    MediaStore.Audio.Media._ID,
+                    MediaStore.Audio.Media.TITLE,
+                    MediaStore.Audio.Media.ARTIST,
+                    MediaStore.Audio.Media.ALBUM,
+                    MediaStore.Audio.Media.DURATION,
+                    MediaStore.Audio.Media.DATA
+                )
 
-                while (c.moveToNext()) {
-                    val id = c.getLong(idCol)
-                    val title = c.getString(titleCol) ?: "Unnamed Track"
-                    val artist = c.getString(artistCol) ?: "Unknown Artist"
-                    val album = c.getString(albumCol) ?: "Unknown Album"
-                    val duration = c.getLong(durationCol)
-                    val path = c.getString(dataCol) ?: ""
+                val cursor: Cursor? = contentResolver.query(uri, projection, selection, null, sortOrder)
+                cursor?.use { c ->
+                    val idCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                    val titleCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                    val artistCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                    val albumCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                    val durationCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                    val dataCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
 
-                    if (path.isNotEmpty()) {
-                        fetchedSongs.add(
-                            Song(
-                                id = id,
-                                title = title,
-                                artist = artist,
-                                album = album,
-                                duration = duration,
-                                path = path
+                    while (c.moveToNext()) {
+                        val id = c.getLong(idCol)
+                        val title = c.getString(titleCol) ?: "Unnamed Track"
+                        val artist = c.getString(artistCol) ?: "Unknown Artist"
+                        val album = c.getString(albumCol) ?: "Unknown Album"
+                        val duration = c.getLong(durationCol)
+                        val path = c.getString(dataCol) ?: ""
+
+                        if (path.isNotEmpty()) {
+                            fetchedSongs.add(
+                                Song(
+                                    id = id,
+                                    title = title,
+                                    artist = artist,
+                                    album = album,
+                                    duration = duration,
+                                    path = path
+                                )
                             )
-                        )
+                        }
                     }
                 }
-            }
 
-            if (fetchedSongs.isNotEmpty()) {
-                musicDao.insertSongs(fetchedSongs)
-                _songs.value = musicDao.getAllSongs()
-            }
-            
-            withContext(Dispatchers.Main) {
-                _isScanning.value = false
+                if (fetchedSongs.isNotEmpty()) {
+                    musicDao.insertSongs(fetchedSongs)
+                    _songs.value = musicDao.getAllSongs()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                withContext(Dispatchers.Main) {
+                    _isScanning.value = false
+                }
             }
         }
     }
 
     // Playback Service bindings
     private fun bindPlaybackService() {
-        val intent = Intent(context, PlaybackService::class.java)
-        context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+        if (isBound) return
+        try {
+            val intent = Intent(context, PlaybackService::class.java)
+            context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            val binder = service as PlaybackService.LocalBinder
-            playbackService = binder.getService()
-            playbackService?.addListener(this@PlaybackViewModel)
-            isBound = true
+            try {
+                val binder = service as? PlaybackService.LocalBinder ?: return
+                playbackService = binder.getService()
+                playbackService?.addListener(this@PlaybackViewModel)
+                isBound = true
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            playbackService?.removeListener(this@PlaybackViewModel)
+            try {
+                playbackService?.removeListener(this@PlaybackViewModel)
+            } catch (_: Exception) {}
             playbackService = null
             isBound = false
         }
@@ -160,11 +179,15 @@ class PlaybackViewModel(
     fun playSong(songsList: List<Song>, songToPlay: Song) {
         val index = songsList.indexOf(songToPlay)
         playbackService?.setQueue(songsList, if (index != -1) index else 0)
-        
+
         // Dynamic Reward Metric integration
         viewModelScope.launch {
-            musicDao.incrementPlayCount(songToPlay.id)
-            incrementExperiencePoints()
+            try {
+                musicDao.incrementPlayCount(songToPlay.id)
+                incrementExperiencePoints()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -186,20 +209,28 @@ class PlaybackViewModel(
 
     fun toggleFavorite(song: Song) {
         viewModelScope.launch {
-            val nextFav = !song.isFavorite
-            musicDao.updateFavorite(song.id, nextFav)
-            _songs.value = musicDao.getAllSongs()
-            if (_currentSong.value?.id == song.id) {
-                _currentSong.value = _currentSong.value?.copy(isFavorite = nextFav)
+            try {
+                val nextFav = !song.isFavorite
+                musicDao.updateFavorite(song.id, nextFav)
+                _songs.value = musicDao.getAllSongs()
+                if (_currentSong.value?.id == song.id) {
+                    _currentSong.value = _currentSong.value?.copy(isFavorite = nextFav)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
 
     fun createPlaylist(name: String, description: String = "", songIds: List<Long> = emptyList()) {
         viewModelScope.launch {
-            val playlist = Playlist(name = name, description = description, songIds = songIds)
-            musicDao.insertPlaylist(playlist)
-            _playlists.value = musicDao.getAllPlaylists()
+            try {
+                val playlist = Playlist(name = name, description = description, songIds = songIds)
+                musicDao.insertPlaylist(playlist)
+                _playlists.value = musicDao.getAllPlaylists()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -228,11 +259,16 @@ class PlaybackViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        if (isBound) {
-            playbackService?.removeListener(this)
-            context.unbindService(serviceConnection)
-            isBound = false
+        try {
+            if (isBound) {
+                playbackService?.removeListener(this)
+                context.unbindService(serviceConnection)
+                isBound = false
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
+        playbackService = null
     }
 }
 
