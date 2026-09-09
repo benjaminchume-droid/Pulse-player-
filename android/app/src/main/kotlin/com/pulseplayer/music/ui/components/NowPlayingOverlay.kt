@@ -1,275 +1,251 @@
 package com.pulseplayer.music.ui.components
 
+import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
-import com.pulseplayer.music.data.RepeatMode
 import com.pulseplayer.music.data.Song
-import com.pulseplayer.music.ui.theme.RealmManager
+import com.pulseplayer.music.viewmodel.DownloadState
+import com.pulseplayer.music.viewmodel.PlaybackViewModel
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NowPlayingOverlay(
-    isOpen: Boolean,
     song: Song?,
     isPlaying: Boolean,
-    playbackPosition: Long,
-    lyricsLoading: Boolean = false,
-    repeatMode: RepeatMode = RepeatMode.OFF,
-    fullScreenLyrics: Boolean = false,
-    onFullScreenLyrics: (Boolean) -> Unit = {},
-    onClose: () -> Unit,
-    onTogglePlayPause: () -> Unit,
-    onSkipNext: () -> Unit,
-    onSkipPrevious: () -> Unit,
-    onSeekTo: (Long) -> Unit,
-    onToggleFavorite: () -> Unit,
-    onFetchLyrics: () -> Unit = {},
-    onEnrichMetadata: () -> Unit = {},
-    onCycleRepeat: () -> Unit = {},
-    onQueueNext: () -> Unit = {},
-    onSleepTimer: (Int) -> Unit = {}
+    onDismiss: () -> Unit,
+    onPlayPause: () -> Unit,
+    playbackViewModel: PlaybackViewModel = viewModel()
 ) {
-    val theme by RealmManager.currentTheme.collectAsState()
-    val isAmoled by RealmManager.amoledMode.collectAsState()
     val context = LocalContext.current
-    var showSleepMenu by remember { mutableStateOf(false) }
+    val downloadState by playbackViewModel.downloadState.collectAsState()
+    val isDownloading = downloadState !is DownloadState.Idle && downloadState !is DownloadState.Completed && downloadState !is DownloadState.Failed
 
-    AnimatedVisibility(
-        visible = isOpen,
-        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.85f)),
+        contentAlignment = Alignment.BottomCenter
     ) {
-        if (song == null) return@AnimatedVisibility
-
-        val duration = song.duration.coerceAtLeast(1L)
-        val displayPos = playbackPosition.coerceIn(0L, duration)
-        val progress = (displayPos.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-        val cover = song.coverUrl.ifBlank { null }
-
-        Box(
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(if (isAmoled) Color.Black else Color(0xFF0A0A12))
-                .pointerInput(Unit) {
-                    detectDragGestures { _, drag -> if (drag.y > 80f) onClose() }
-                }
-                .pointerInput(song.id) {
-                    detectHorizontalDragGestures { _, dragAmount ->
-                        if (dragAmount < -80f) onSkipNext()
-                        else if (dragAmount > 80f) onSkipPrevious()
-                    }
-                }
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // Blurred full-bleed cover background
-            if (cover != null) {
+            song?.let { currentSong ->
                 AsyncImage(
-                    model = ImageRequest.Builder(context).data(cover).crossfade(true).build(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize().blur(32.dp)
+                    model = currentSong.albumArt,
+                    contentDescription = "Album art for ${currentSong.title}",
+                    modifier = Modifier
+                        .size(280.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.White.copy(alpha = 0.1f))
                 )
-                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)))
-            } else {
-                Box(
-                    Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(theme.gradientColors)
-                    )
-                )
-            }
 
-            if (fullScreenLyrics) {
-                Column(Modifier.fillMaxSize().padding(20.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        IconButton(onClick = { onFullScreenLyrics(false) }) {
-                            Icon(Icons.Default.KeyboardArrowDown, null, tint = Color.White)
-                        }
-                        Text("Lyrics", color = theme.accentColor, fontWeight = FontWeight.Bold)
-                        Spacer(modifier.size(48.dp))
-                    }
-                    LyricsPanel(
-                        song = song,
-                        positionMs = displayPos,
-                        isLoading = lyricsLoading,
-                        onFetchLyrics = onFetchLyrics,
-                        modifier = Modifier.fillMaxSize().padding(top = 8.dp)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = currentSong.title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 22.sp
+                    )
+                    Text(
+                        text = currentSong.artist,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 16.sp
                     )
                 }
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+
+                AnimatedVisibility(
+                    visible = downloadState !is DownloadState.Idle,
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { -20 }),
+                    exit = fadeOut() + slideOutVertically(targetOffsetY = { -20 })
                 ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = onClose) {
-                            Icon(Icons.Default.KeyboardArrowDown, "Close", tint = Color.White, modifier = Modifier.size(32.dp))
-                        }
-                        Text("NOW PLAYING", color = theme.accentColor, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                        IconButton(onClick = onToggleFavorite) {
-                            Icon(
-                                if (song.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                null,
-                                tint = if (song.isFavorite) theme.accentColor else Color.White
-                            )
-                        }
-                    }
+                    DownloadProgressSection(downloadState)
+                }
 
-                    // Cover art fills the artwork box
-                    Box(
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DownloadButton(
+                        isDownloading = isDownloading,
+                        downloadState = downloadState,
+                        onDownloadClick = {
+                            currentSong.let { track ->
+                                playbackViewModel.downloadTrack(track)
+                                Toast.makeText(context, "Download started", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+
+                    IconButton(
+                        onClick = onPlayPause,
                         modifier = Modifier
-                            .size(260.dp)
-                            .clip(RoundedCornerShape(24.dp))
-                            .border(2.dp, theme.accentColor.copy(alpha = 0.4f), RoundedCornerShape(24.dp)),
-                        contentAlignment = Alignment.Center
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(Color.White)
                     ) {
-                        if (cover != null) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(context).data(cover).crossfade(true).build(),
-                                contentDescription = song.album,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
-                            Box(
-                                Modifier.fillMaxSize().background(Color(0x22FFFFFF)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(theme.glyphEmblems, fontSize = 64.sp)
-                            }
-                        }
+                        Icon(
+                            painter = androidx.compose.material.icons.Icons.Filled.PlayArrow,
+                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            tint = Color(0xFF1a1a2e),
+                            modifier = Modifier.size(40.dp)
+                        )
                     }
 
-                    Text(song.title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Light,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
-                    Text(song.artist, color = theme.accentColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    if (song.album.isNotBlank() && song.album != "Unknown Album") {
-                        Text(song.album, color = Color.Gray, fontSize = 12.sp)
-                    }
-
-                    Slider(
-                        value = progress,
-                        onValueChange = { onSeekTo((it * duration).toLong()) },
-                        colors = SliderDefaults.colors(
-                            thumbColor = theme.accentColor,
-                            activeTrackColor = theme.accentColor,
-                            inactiveTrackColor = Color.White.copy(alpha = 0.2f)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(formatTime(displayPos), color = Color.Gray, fontSize = 11.sp)
-                        Text(formatTime(duration), color = Color.Gray, fontSize = 11.sp)
-                    }
-
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.2f))
                     ) {
-                        IconButton(onClick = onCycleRepeat) {
-                            Icon(
-                                when (repeatMode) {
-                                    RepeatMode.ONE -> Icons.Default.RepeatOne
-                                    RepeatMode.ALL -> Icons.Default.Repeat
-                                    RepeatMode.OFF -> Icons.Default.Repeat
-                                },
-                                "Repeat",
-                                tint = if (repeatMode != RepeatMode.OFF) theme.accentColor else Color.White.copy(0.5f)
-                            )
-                        }
-                        IconButton(onClick = onSkipPrevious) {
-                            Icon(Icons.Default.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(36.dp))
-                        }
-                        Box(
-                            Modifier.size(64.dp).clip(CircleShape).background(theme.accentColor),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            IconButton(onClick = onTogglePlayPause) {
-                                Icon(
-                                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    null, tint = Color.Black, modifier = Modifier.size(36.dp)
-                                )
-                            }
-                        }
-                        IconButton(onClick = onSkipNext) {
-                            Icon(Icons.Default.SkipNext, null, tint = Color.White, modifier = Modifier.size(36.dp))
-                        }
-                        Box {
-                            IconButton(onClick = { showSleepMenu = true }) {
-                                Icon(Icons.Default.Timer, "Sleep", tint = Color.White.copy(0.7f))
-                            }
-                            DropdownMenu(expanded = showSleepMenu, onDismissRequest = { showSleepMenu = false }) {
-                                listOf(0, 5, 10, 15, 30, 45, 60).forEach { m ->
-                                    DropdownMenuItem(
-                                        text = { Text(if (m == 0) "Off" else "$m min") },
-                                        onClick = {
-                                            onSleepTimer(m)
-                                            showSleepMenu = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
+                        Icon(
+                            painter = androidx.compose.material.icons.Icons.Filled.KeyboardArrowDown,
+                            contentDescription = "Dismiss",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        TextButton(onClick = { onFullScreenLyrics(true) }) {
-                            Text("Full lyrics", color = theme.accentColor)
-                        }
-                        TextButton(onClick = onEnrichMetadata) {
-                            Text("Metadata", color = theme.accentColor)
-                        }
-                    }
-
-                    LyricsPanel(
-                        song = song,
-                        positionMs = displayPos,
-                        isLoading = lyricsLoading,
-                        onFetchLyrics = onFetchLyrics,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(40.dp))
                 }
             }
         }
     }
 }
 
-private fun formatTime(ms: Long): String {
-    val totalSec = (ms / 1000).toInt().coerceAtLeast(0)
-    return "%d:%02d".format(totalSec / 60, totalSec % 60)
+@Composable
+private fun DownloadProgressSection(downloadState: DownloadState) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        when (downloadState) {
+            is DownloadState.Queued -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(48.dp),
+                    color = Color(0xFF4ade80),
+                    strokeWidth = 4.dp
+                )
+                Text(
+                    text = "Queued...",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 14.sp
+                )
+            }
+            is DownloadState.Downloading -> {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(48.dp),
+                        color = Color(0xFF3b82f6),
+                        strokeWidth = 4.dp,
+                        progress = downloadState.progress / 100f
+                    )
+                    Text(
+                        text = "${downloadState.progress}%",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            is DownloadState.Writing -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(48.dp),
+                    color = Color(0xFFf59e0b),
+                    strokeWidth = 4.dp
+                )
+                Text(
+                    text = "Writing to disk...",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 14.sp
+                )
+            }
+            is DownloadState.Completed -> {
+                Icon(
+                    painter = androidx.compose.material.icons.Icons.Filled.CheckCircle,
+                    contentDescription = "Download complete",
+                    tint = Color(0xFF4ade80),
+                    modifier = Modifier.size(48.dp)
+                )
+                Text(
+                    text = "Download complete!",
+                    color = Color(0xFF4ade80),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            is DownloadState.Failed -> {
+                Icon(
+                    painter = androidx.compose.material.icons.Icons.Filled.Error,
+                    contentDescription = "Download failed",
+                    tint = Color(0xFFef4444),
+                    modifier = Modifier.size(48.dp)
+                )
+                Text(
+                    text = downloadState.message ?: "Download failed",
+                    color = Color(0xFFef4444),
+                    fontSize = 14.sp
+                )
+            }
+            else -> {}
+        }
+    }
+}
+
+@Composable
+private fun DownloadButton(
+    isDownloading: Boolean,
+    downloadState: DownloadState,
+    onDownloadClick: () -> Unit
+) {
+    val buttonColor = when (downloadState) {
+        is DownloadState.Completed -> Color(0xFF4ade80)
+        is DownloadState.Failed -> Color(0xFFef4444)
+        else -> Color.White.copy(alpha = 0.2f)
+    }
+
+    IconButton(
+        onClick = onDownloadClick,
+        enabled = !isDownloading,
+        modifier = Modifier
+            .size(56.dp)
+            .clip(CircleShape)
+            .background(buttonColor)
+    ) {
+        Icon(
+            painter = when (downloadState) {
+                is DownloadState.Completed -> androidx.compose.material.icons.Icons.Filled.CheckCircle
+                is DownloadState.Failed -> androidx.compose.material.icons.Icons.Filled.Error
+                else -> androidx.compose.material.icons.Icons.Filled.Download
+            },
+            contentDescription = "Download",
+            tint = if (isDownloading) Color.White.copy(alpha = 0.5f) else Color.White,
+            modifier = Modifier.size(28.dp)
+        )
+    }
 }
