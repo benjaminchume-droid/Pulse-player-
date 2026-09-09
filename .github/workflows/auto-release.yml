@@ -37,39 +37,55 @@ jobs:
     - name: Setup Gradle
       uses: gradle/gradle-build-action@v2
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x android/gradlew
-
-    - name: Build Release APK
-      run: cd android && ./gradlew assembleRelease --no-daemon --stacktrace
+    - name: Build Signed Release
+      if: env.KEYSTORE != null
+      run: cd android && gradle assembleRelease
       env:
-        GRADLE_OPTS: "-Xmx2048m -XX:MaxMetaspaceSize=512m -Dorg.gradle.jvmargs='-Xmx2048m'"
+        KEYSTORE: ${{ secrets.KEYSTORE }}
+        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        GRADLE_OPTS: "-Xmx2048m -XX:MaxMetaspaceSize=512m"
+
+    - name: Build Release (Unsigned)
+      if: env.KEYSTORE == null
+      run: cd android && gradle assembleRelease
+      env:
+        GRADLE_OPTS: "-Xmx2048m -XX:MaxMetaspaceSize=512m"
 
     - name: Find APK
       id: find_apk
       run: |
         APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
         if [ -z "$APK_PATH" ]; then
-          echo "❌ APK not found! Listing outputs:"
-          find android/app/build/outputs -type f 2>/dev/null || echo "No outputs found"
+          echo "❌ APK not found!"
+          find android/app/build/outputs -type f
           exit 1
         fi
-        echo "✅ APK found: $APK_PATH"
+        echo "✅ APK: $APK_PATH"
         echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
 
     - name: Generate Changelog
       run: |
-        echo "## Changes in v${{ steps.version.outputs.version_name }}" > changelog.md
-        echo "" >> changelog.md
-        echo "### 🎉 Features" >> changelog.md
-        echo "- Download integration with real-time progress" >> changelog.md
-        echo "- Spotify/YouTube Music web extraction" >> changelog.md
-        echo "- Offline library with auto-playlist" >> changelog.md
-        echo "- Streaming icon in navigation" >> changelog.md
-        echo "" >> changelog.md
-        echo "### 📦 Build Info" >> changelog.md
-        echo "- Version: ${{ steps.version.outputs.version_name }}" >> changelog.md
-        echo "- Code: ${{ steps.version.outputs.version_code }}" >> changelog.md
+        cat > changelog.md << EOF
+        ## Pulse Player v${{ steps.version.outputs.version_name }}
+        
+        ### 🎉 Features
+        - Download integration with real-time progress
+        - Spotify/YouTube Music web extraction
+        - Offline library with auto-playlist
+        - Streaming icon in navigation
+        
+        ### 📦 Build
+        - Version: ${{ steps.version.outputs.version_name }}
+        - Code: ${{ steps.version.outputs.version_code }}
+        - Signed: ${{ env.KEYSTORE != null && 'Yes ✅' || 'No ⚠️' }}
+        
+        ### ⚠️ Legal
+        - Personal offline use only
+        - No DRM bypass
+        EOF
+        cat changelog.md
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
