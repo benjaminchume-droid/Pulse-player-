@@ -10,7 +10,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -57,7 +63,7 @@ fun NowPlayingOverlay(
         val displayPos = playbackPosition.coerceIn(0L, duration)
         val progress = (displayPos.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
 
-        val bg = if (isAmoled) {
+        val bgModifier = if (isAmoled) {
             Modifier.background(Color.Black)
         } else {
             Modifier.background(Brush.verticalGradient(theme.gradientColors))
@@ -66,7 +72,7 @@ fun NowPlayingOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(bg)
+                .then(bgModifier)
                 .pointerInput(Unit) {
                     detectDragGestures { _, drag ->
                         if (drag.y > 80f) onClose()
@@ -81,29 +87,40 @@ fun NowPlayingOverlay(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Header
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onClose) {
-                        Icon(Icons.Default.KeyboardArrowDown, "Close", tint = Color.White, modifier = Modifier.size(32.dp))
+                        Icon(
+                            Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Close",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("NOW PLAYING", color = theme.accentColor, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                        Text("Pulse Player", color = Color.Gray, fontSize = 11.sp)
+                        Text(
+                            text = "NOW PLAYING",
+                            color = theme.accentColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 2.sp
+                        )
+                        Text(text = "Pulse Player", color = Color.Gray, fontSize = 11.sp)
                     }
                     IconButton(onClick = onToggleFavorite) {
                         Icon(
-                            if (song.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                            "Favorite",
+                            imageVector = if (song.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = "Favorite",
                             tint = if (song.isFavorite) theme.accentColor else Color.White
                         )
                     }
                 }
 
-                // Artwork
                 Box(
                     modifier = Modifier
                         .size(240.dp)
@@ -112,13 +129,15 @@ fun NowPlayingOverlay(
                         .border(2.dp, theme.accentColor.copy(alpha = 0.5f), RoundedCornerShape(28.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(theme.glyphEmblems, fontSize = 64.sp)
+                    Text(text = theme.glyphEmblems, fontSize = 64.sp)
                 }
 
-                // Title / artist / album metadata
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text(
-                        song.title,
+                        text = song.title,
                         color = Color.White,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Light,
@@ -126,27 +145,30 @@ fun NowPlayingOverlay(
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Text(song.artist, color = theme.accentColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = song.artist,
+                        color = theme.accentColor,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                     if (song.album.isNotBlank() && song.album != "Unknown Album") {
-                        Text(song.album, color = Color.Gray, fontSize = 12.sp)
+                        Text(text = song.album, color = Color.Gray, fontSize = 12.sp)
                     }
                     if (song.year > 0 || song.genre.isNotBlank()) {
-                        Text(
-                            listOfNotNull(
-                                song.year.takeIf { it > 0 }?.toString(),
-                                song.genre.takeIf { it.isNotBlank() && it != "All Streams" }
-                            ).joinToString(" · "),
-                            color = Color.Gray,
-                            fontSize = 11.sp
-                        )
+                        val metaLine = listOfNotNull(
+                            song.year.takeIf { it > 0 }?.toString(),
+                            song.genre.takeIf { it.isNotBlank() && it != "All Streams" }
+                        ).joinToString(" · ")
+                        if (metaLine.isNotBlank()) {
+                            Text(text = metaLine, color = Color.Gray, fontSize = 11.sp)
+                        }
                     }
                     TextButton(onClick = onEnrichMetadata) {
-                        Text("Refresh metadata", color = theme.accentColor, fontSize = 11.sp)
+                        Text(text = "Refresh metadata", color = theme.accentColor, fontSize = 11.sp)
                     }
                 }
 
-                // Seek bar
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Slider(
                         value = progress,
@@ -157,20 +179,27 @@ fun NowPlayingOverlay(
                             inactiveTrackColor = Color.White.copy(alpha = 0.2f)
                         )
                     )
-                    Row(Modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(formatTime(displayPos), color = Color.Gray, fontSize = 11.sp)
-                        Text(formatTime(duration), color = Color.Gray, fontSize = 11.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(text = formatTime(displayPos), color = Color.Gray, fontSize = 11.sp)
+                        Text(text = formatTime(duration), color = Color.Gray, fontSize = 11.sp)
                     }
                 }
 
-                // Transport
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onSkipPrevious) {
-                        Icon(Icons.Default.SkipPrevious, "Prev", tint = Color.White, modifier = Modifier.size(36.dp))
+                        Icon(
+                            Icons.Default.SkipPrevious,
+                            contentDescription = "Previous",
+                            tint = Color.White,
+                            modifier = Modifier.size(36.dp)
+                        )
                     }
                     Box(
                         modifier = Modifier
@@ -181,19 +210,23 @@ fun NowPlayingOverlay(
                     ) {
                         IconButton(onClick = onTogglePlayPause) {
                             Icon(
-                                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                "Play/Pause",
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = "Play/Pause",
                                 tint = Color.Black,
                                 modifier = Modifier.size(36.dp)
                             )
                         }
                     }
                     IconButton(onClick = onSkipNext) {
-                        Icon(Icons.Default.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(36.dp))
+                        Icon(
+                            Icons.Default.SkipNext,
+                            contentDescription = "Next",
+                            tint = Color.White,
+                            modifier = Modifier.size(36.dp)
+                        )
                     }
                 }
 
-                // Lyrics with tracking
                 LyricsPanel(
                     song = song,
                     positionMs = displayPos,
@@ -202,7 +235,7 @@ fun NowPlayingOverlay(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(Modifier.height(40.dp))
+                Spacer(modifier = Modifier.height(40.dp))
             }
         }
     }

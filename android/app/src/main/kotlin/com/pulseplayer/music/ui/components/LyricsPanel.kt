@@ -38,9 +38,9 @@ fun LyricsPanel(
         when {
             song == null -> emptyList()
             song.syncedLyrics.isNotBlank() -> LyricsRepository.parseLrc(song.syncedLyrics)
-            song.lyrics.isNotBlank() -> song.lyrics.lines().filter { it.isNotBlank() }.mapIndexed { i, line ->
-                (i * 3000L) to line // fake timing for plain lyrics scroll
-            }
+            song.lyrics.isNotBlank() -> song.lyrics.lines()
+                .filter { it.isNotBlank() }
+                .mapIndexed { i, line -> (i * 3000L) to line }
             else -> emptyList()
         }
     }
@@ -70,7 +70,7 @@ fun LyricsPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "LYRICS",
+                text = "LYRICS",
                 color = theme.accentColor,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
@@ -79,9 +79,13 @@ fun LyricsPanel(
             if (song != null && song.lyrics.isBlank() && song.syncedLyrics.isBlank()) {
                 TextButton(onClick = onFetchLyrics, enabled = !isLoading) {
                     if (isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), color = theme.accentColor, strokeWidth = 2.dp)
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            color = theme.accentColor,
+                            strokeWidth = 2.dp
+                        )
                     } else {
-                        Text("Fetch", color = theme.accentColor, fontSize = 11.sp)
+                        Text(text = "Fetch", color = theme.accentColor, fontSize = 11.sp)
                     }
                 }
             }
@@ -91,14 +95,24 @@ fun LyricsPanel(
 
         when {
             isLoading -> {
-                Box(Modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     CircularProgressIndicator(color = theme.accentColor)
                 }
             }
             parsed.isEmpty() -> {
-                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        "No lyrics yet — tap Fetch",
+                        text = "No lyrics yet — tap Fetch",
                         color = Color.Gray,
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center
@@ -106,7 +120,10 @@ fun LyricsPanel(
                 }
             }
             else -> {
-                LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyColumn(
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     itemsIndexed(parsed) { index, pair ->
                         val isActive = index == activeIdx
                         Text(

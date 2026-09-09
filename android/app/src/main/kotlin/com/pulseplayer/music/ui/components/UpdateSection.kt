@@ -41,19 +41,19 @@ fun UpdateSection(modifier: Modifier = Modifier) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "App Updates",
+                        text = "App Updates",
                         color = if (theme.isLight) Color.Black else Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
                     )
                     Text(
-                        "Current: v${checker.currentVersionName()}",
+                        text = "Current: v${checker.currentVersionName()}",
                         color = Color.Gray,
                         fontSize = 11.sp
                     )
                 }
                 Icon(
-                    Icons.Default.SystemUpdate,
+                    imageVector = Icons.Default.SystemUpdate,
                     contentDescription = null,
                     tint = theme.accentColor,
                     modifier = Modifier.size(22.dp)
@@ -80,7 +80,9 @@ fun UpdateSection(modifier: Modifier = Modifier) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     LinearProgressIndicator(
                         progress = progress.percent / 100f,
-                        modifier = Modifier.fillMaxWidth().height(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp),
                         color = theme.accentColor,
                         trackColor = Color.White.copy(alpha = 0.12f)
                     )
@@ -88,11 +90,20 @@ fun UpdateSection(modifier: Modifier = Modifier) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("${progress.percent}%", color = theme.accentColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text(progress.speedLabel, color = Color.Gray, fontSize = 12.sp)
-                        val totalMb = if (progress.totalBytes > 0) String.format("%.1f MB", progress.totalBytes / 1_000_000.0) else "?"
+                        Text(
+                            text = "${progress.percent}%",
+                            color = theme.accentColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(text = progress.speedLabel, color = Color.Gray, fontSize = 12.sp)
+                        val totalMb = if (progress.totalBytes > 0) {
+                            String.format("%.1f MB", progress.totalBytes / 1_000_000.0)
+                        } else {
+                            "?"
+                        }
                         val doneMb = String.format("%.1f MB", progress.bytesDownloaded / 1_000_000.0)
-                        Text("$doneMb / $totalMb", color = Color.Gray, fontSize = 11.sp)
+                        Text(text = "$doneMb / $totalMb", color = Color.Gray, fontSize = 11.sp)
                     }
                 }
             }
@@ -109,13 +120,20 @@ fun UpdateSection(modifier: Modifier = Modifier) {
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier = Modifier.width(6.dp))
-                            Text("Check for update", fontSize = 12.sp)
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = "Check for update", fontSize = 12.sp)
                         }
                     }
                     UpdateState.CHECKING -> {
-                        CircularProgressIndicator(color = theme.accentColor, modifier = Modifier.size(28.dp))
+                        CircularProgressIndicator(
+                            color = theme.accentColor,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
                     UpdateState.AVAILABLE -> {
                         Button(
@@ -124,9 +142,16 @@ fun UpdateSection(modifier: Modifier = Modifier) {
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier = Modifier.width(6.dp))
-                            Text("Download ${progress.updateInfo?.versionName ?: ""}", fontSize = 12.sp)
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Download ${progress.updateInfo?.versionName ?: ""}",
+                                fontSize = 12.sp
+                            )
                         }
                     }
                     UpdateState.DOWNLOADING -> {
@@ -135,16 +160,20 @@ fun UpdateSection(modifier: Modifier = Modifier) {
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Default.Pause, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier = Modifier.width(4.dp))
-                            Text("Pause", fontSize = 12.sp)
+                            Icon(
+                                imageVector = Icons.Default.Pause,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(text = "Pause", fontSize = 12.sp)
                         }
                         OutlinedButton(
                             onClick = { checker.cancel() },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Cancel", fontSize = 12.sp)
+                            Text(text = "Cancel", fontSize = 12.sp)
                         }
                     }
                     UpdateState.PAUSED -> {
@@ -154,16 +183,20 @@ fun UpdateSection(modifier: Modifier = Modifier) {
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier = Modifier.width(4.dp))
-                            Text("Resume", fontSize = 12.sp)
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(text = "Resume", fontSize = 12.sp)
                         }
                         OutlinedButton(
                             onClick = { checker.cancel() },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Cancel", fontSize = 12.sp)
+                            Text(text = "Cancel", fontSize = 12.sp)
                         }
                     }
                     UpdateState.READY_TO_INSTALL -> {
@@ -173,7 +206,11 @@ fun UpdateSection(modifier: Modifier = Modifier) {
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Install update", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "Install update",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
