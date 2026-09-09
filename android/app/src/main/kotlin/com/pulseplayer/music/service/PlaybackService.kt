@@ -20,11 +20,13 @@ import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import androidx.media.app.NotificationCompat.MediaStyle
 import com.pulseplayer.music.MainActivity
+import com.pulseplayer.music.data.RepeatMode
 import com.pulseplayer.music.data.Song
 import kotlinx.coroutines.*
 import java.io.File
 
-class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, MediaPlayer.OnCompletionListener, MediaPlayer.OnPreparedListener, MediaPlayer.OnErrorListener {
+class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener,
+    MediaPlayer.OnCompletionListener, MediaPlayer.OnPreparedListener, MediaPlayer.OnErrorListener {
 
     private val binder = LocalBinder()
     private var mediaPlayer: MediaPlayer? = null
@@ -32,17 +34,21 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
     private var audioFocusRequest: AudioFocusRequest? = null
     private var mediaSession: MediaSessionCompat? = null
 
-    // Playback state variables
     var currentQueue: List<Song> = emptyList()
     var currentSongIndex: Int = -1
     var isShuffleEnabled: Boolean = false
-    var isRepeatEnabled: Boolean = false
+    var repeatMode: RepeatMode = RepeatMode.OFF
+    /** Crossfade length in seconds (0 = off). */
+    var crossfadeSeconds: Int = 0
     @Volatile var isPrepared: Boolean = false
+
+    private val playNextStack = ArrayDeque<Song>()
+    private var sleepTimerJob: Job? = null
+    private var crossfadeJob: Job? = null
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var positionUpdateJob: Job? = null
 
-    // Notification IDs
     private val NOTIFICATION_ID = 5153
     private val CHANNEL_ID = "PulsePlayerPlaybackChannel"
 
@@ -50,6 +56,8 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
         fun onSongChanged(song: Song?)
         fun onPlaybackStatusChanged(isPlaying: Boolean)
         fun onPositionUpdate(positionMs: Long)
+        fun onRepeatModeChanged(mode: RepeatMode) {}
+        fun onSleepTimerChanged(remainingMs: Long?) {}
     }
 
     private val listeners = mutableListOf<PlaybackListener>()
@@ -65,17 +73,11 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
         initMediaSession()
         createNotificationChannel()
         registerMediaActionsReceiver()
-        // Immediately show a placeholder notification so startForegroundService is satisfied
         showPlaceholderNotification()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Always ensure we are in the foreground as soon as possible
-        if (getCurrentSong() != null) {
-            showNotification()
-        } else {
-            showPlaceholderNotification()
-        }
+        if (getCurrentSong() != null) showNotification() else showPlaceholderNotification()
         return START_STICKY
     }
 
@@ -112,28 +114,72 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
     override fun onBind(intent: Intent?): IBinder = binder
 
     fun addListener(listener: PlaybackListener) {
-        if (!listeners.contains(listener)) {
-            listeners.add(listener)
-        }
+        if (!listeners.contains(listener)) listeners.add(listener)
         getCurrentSong()?.let { listener.onSongChanged(it) }
         listener.onPlaybackStatusChanged(isPlaying())
+        listener.onRepeatModeChanged(repeatMode)
     }
 
     fun removeListener(listener: PlaybackListener) {
         listeners.remove(listener)
     }
 
-    // Controls
     fun setQueue(songs: List<Song>, startIndex: Int = 0) {
         currentQueue = songs
         currentSongIndex = startIndex.coerceIn(0, (songs.size - 1).coerceAtLeast(0))
+        playNextStack.clear()
         if (currentSongIndex in currentQueue.indices) {
             playSong(currentQueue[currentSongIndex])
         }
     }
 
+    /** Insert song to play immediately after the current one. */
+    fun queuePlayNext(song: Song) {
+        playNextStack.addFirst(song)
+    }
+
+    fun cycleRepeatMode(): RepeatMode {
+        repeatMode = when (repeatMode) {
+            RepeatMode.OFF -> RepeatMode.ALL
+            RepeatMode.ALL -> RepeatMode.ONE
+            RepeatMode.ONE -> RepeatMode.OFF
+        }
+        listeners.toList().forEach { it.onRepeatModeChanged(repeatMode) }
+        return repeatMode
+    }
+
+    fun setRepeatMode(mode: RepeatMode) {
+        repeatMode = mode
+        listeners.toList().forEach { it.onRepeatModeChanged(mode) }
+    }
+
+    fun setCrossfadeSeconds(sec: Int) {
+        crossfadeSeconds = sec.coerceIn(0, 25)
+    }
+
+    /** Sleep timer: stop after [minutes]. 0 cancels. */
+    fun setSleepTimerMinutes(minutes: Int) {
+        sleepTimerJob?.cancel()
+        if (minutes <= 0) {
+            listeners.toList().forEach { it.onSleepTimerChanged(null) }
+            return
+        }
+        val totalMs = minutes * 60_000L
+        sleepTimerJob = serviceScope.launch {
+            var left = totalMs
+            while (left > 0 && isActive) {
+                listeners.toList().forEach { it.onSleepTimerChanged(left) }
+                delay(1000)
+                left -= 1000
+            }
+            if (isActive) {
+                pause()
+                listeners.toList().forEach { it.onSleepTimerChanged(null) }
+            }
+        }
+    }
+
     fun playSong(song: Song) {
-        // Ensure service is running as foreground
         try {
             val intent = Intent(applicationContext, PlaybackService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -147,12 +193,15 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
 
         if (!requestAudioFocus()) return
         isPrepared = false
+        crossfadeJob?.cancel()
 
         try {
             mediaPlayer?.reset()
+            mediaPlayer?.setVolume(1f, 1f)
             val uri = when {
                 song.path.startsWith("content://") -> Uri.parse(song.path)
                 song.path.startsWith("file://") -> Uri.parse(song.path)
+                song.path.startsWith("http://") || song.path.startsWith("https://") -> Uri.parse(song.path)
                 else -> Uri.fromFile(File(song.path))
             }
             mediaPlayer?.setDataSource(applicationContext, uri)
@@ -163,7 +212,6 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
             showNotification()
         } catch (e: Exception) {
             e.printStackTrace()
-            // Gracefully move to next song on loading fails
             serviceScope.launch {
                 delay(300)
                 skipNext()
@@ -178,6 +226,7 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
                     mediaPlayer?.start()
                     notifyPlaybackStatus(true)
                     startPositionTracker()
+                    scheduleCrossfadeWatch()
                     updatePlaybackState(PlaybackStateCompat.STATE_PLAYING)
                     showNotification()
                 } catch (e: Exception) {
@@ -189,14 +238,12 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
 
     fun pause() {
         try {
-            if (mediaPlayer?.isPlaying == true) {
-                mediaPlayer?.pause()
-            }
+            if (mediaPlayer?.isPlaying == true) mediaPlayer?.pause()
             notifyPlaybackStatus(false)
             stopPositionTracker()
+            crossfadeJob?.cancel()
             updatePlaybackState(PlaybackStateCompat.STATE_PAUSED)
             showNotification()
-            // Keep notification but allow system to manage service priority
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 stopForeground(STOP_FOREGROUND_DETACH)
             } else {
@@ -209,23 +256,34 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
     }
 
     fun togglePlayPause() {
-        if (isPlaying()) {
-            pause()
-        } else {
-            play()
-        }
+        if (isPlaying()) pause() else play()
     }
 
     fun skipNext() {
+        if (playNextStack.isNotEmpty()) {
+            val next = playNextStack.removeFirst()
+            playSong(next)
+            return
+        }
         if (currentQueue.isEmpty()) return
-        if (isRepeatEnabled && currentSongIndex in currentQueue.indices) {
+        if (repeatMode == RepeatMode.ONE && currentSongIndex in currentQueue.indices) {
             playSong(currentQueue[currentSongIndex])
             return
         }
         if (isShuffleEnabled) {
             currentSongIndex = currentQueue.indices.random()
         } else {
-            currentSongIndex = (currentSongIndex + 1) % currentQueue.size
+            val next = currentSongIndex + 1
+            if (next >= currentQueue.size) {
+                if (repeatMode == RepeatMode.ALL) {
+                    currentSongIndex = 0
+                } else {
+                    notifyPlaybackStatus(false)
+                    return
+                }
+            } else {
+                currentSongIndex = next
+            }
         }
         if (currentSongIndex in currentQueue.indices) {
             playSong(currentQueue[currentSongIndex])
@@ -234,7 +292,6 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
 
     fun skipPrevious() {
         if (currentQueue.isEmpty()) return
-        // If more than 3 seconds in, restart current song instead of previous
         if (getPosition() > 3000) {
             seekTo(0)
             return
@@ -255,6 +312,7 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
                 mediaPlayer?.seekTo(positionMs.toInt().coerceAtLeast(0))
                 notifyPosition(positionMs)
                 updatePlaybackState(if (isPlaying()) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED)
+                scheduleCrossfadeWatch()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -263,38 +321,55 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
 
     fun isPlaying(): Boolean = try {
         mediaPlayer?.isPlaying == true
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         false
     }
 
-    fun getCurrentSong(): Song? {
-        return if (currentSongIndex in currentQueue.indices) currentQueue[currentSongIndex] else null
+    fun getCurrentSong(): Song? =
+        if (currentSongIndex in currentQueue.indices) currentQueue[currentSongIndex] else null
+
+    fun getDuration(): Long = try {
+        if (isPrepared) mediaPlayer?.duration?.toLong()?.coerceAtLeast(0L) ?: 0L
+        else getCurrentSong()?.duration ?: 0L
+    } catch (_: Exception) {
+        getCurrentSong()?.duration ?: 0L
     }
 
-    fun getDuration(): Long {
-        return try {
-            if (isPrepared) mediaPlayer?.duration?.toLong()?.coerceAtLeast(0L) ?: 0L
-            else getCurrentSong()?.duration ?: 0L
-        } catch (e: Exception) {
-            getCurrentSong()?.duration ?: 0L
+    fun getPosition(): Long = try {
+        if (isPrepared) mediaPlayer?.currentPosition?.toLong()?.coerceAtLeast(0L) ?: 0L else 0L
+    } catch (_: Exception) {
+        0L
+    }
+
+    /** Soft volume ramp before advancing (MediaPlayer single-instance approximation). */
+    private fun scheduleCrossfadeWatch() {
+        crossfadeJob?.cancel()
+        if (crossfadeSeconds <= 0) return
+        crossfadeJob = serviceScope.launch {
+            while (isActive && isPlaying()) {
+                val dur = getDuration()
+                val pos = getPosition()
+                if (dur > 0 && pos > 0) {
+                    val remain = dur - pos
+                    val window = crossfadeSeconds * 1000L
+                    if (remain in 1 until window) {
+                        val vol = (remain.toFloat() / window).coerceIn(0.05f, 1f)
+                        try { mediaPlayer?.setVolume(vol, vol) } catch (_: Exception) {}
+                    }
+                }
+                delay(200)
+            }
         }
     }
 
-    fun getPosition(): Long {
-        return try {
-            if (isPrepared) mediaPlayer?.currentPosition?.toLong()?.coerceAtLeast(0L) ?: 0L else 0L
-        } catch (e: Exception) {
-            0L
-        }
-    }
-
-    // MediaPlayer callbacks
     override fun onPrepared(mp: MediaPlayer?) {
         isPrepared = true
         try {
+            mp?.setVolume(1f, 1f)
             mp?.start()
             notifyPlaybackStatus(true)
             startPositionTracker()
+            scheduleCrossfadeWatch()
             updatePlaybackState(PlaybackStateCompat.STATE_PLAYING)
             showNotification()
         } catch (e: Exception) {
@@ -312,22 +387,18 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
     override fun onError(mp: MediaPlayer?, what: Int, extra: Int): Boolean {
         isPrepared = false
         notifyPlaybackStatus(false)
-        // Try next track instead of crashing
         serviceScope.launch {
             delay(400)
             skipNext()
         }
-        return true // error handled
+        return true
     }
 
-    // Position updates
     private fun startPositionTracker() {
         positionUpdateJob?.cancel()
         positionUpdateJob = serviceScope.launch {
             while (isActive) {
-                if (isPlaying()) {
-                    notifyPosition(getPosition())
-                }
+                if (isPlaying()) notifyPosition(getPosition())
                 delay(500)
             }
         }
@@ -338,7 +409,6 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
         positionUpdateJob = null
     }
 
-    // Listeners notifications dispatchers
     private fun notifySongChanged(song: Song) {
         listeners.toList().forEach { it.onSongChanged(song) }
     }
@@ -351,7 +421,6 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
         listeners.toList().forEach { it.onPositionUpdate(positionMs) }
     }
 
-    // Audio Focus Configuration
     private fun requestAudioFocus(): Boolean {
         if (audioManager == null) return false
         val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -369,24 +438,19 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
             audioManager!!.requestAudioFocus(focusRequest)
         } else {
             @Suppress("DEPRECATION")
-            audioManager!!.requestAudioFocus(
-                this,
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN
-            )
+            audioManager!!.requestAudioFocus(this, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
         }
         return result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
     }
 
     override fun onAudioFocusChange(focusChange: Int) {
         when (focusChange) {
-            AudioManager.AUDIOFOCUS_LOSS -> pause()
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> pause()
+            AudioManager.AUDIOFOCUS_LOSS, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> pause()
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 try { mediaPlayer?.setVolume(0.2f, 0.2f) } catch (_: Exception) {}
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
-                try { mediaPlayer?.setVolume(1.0f, 1.0f) } catch (_: Exception) {}
+                try { mediaPlayer?.setVolume(1f, 1f) } catch (_: Exception) {}
                 play()
             }
         }
@@ -404,35 +468,27 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
     }
 
     private fun updatePlaybackState(state: Int) {
-        val pos = getPosition()
         mediaSession?.setPlaybackState(
             PlaybackStateCompat.Builder()
                 .setActions(
-                    PlaybackStateCompat.ACTION_PLAY or
-                    PlaybackStateCompat.ACTION_PAUSE or
-                    PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                    PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
-                    PlaybackStateCompat.ACTION_SEEK_TO or
-                    PlaybackStateCompat.ACTION_PLAY_PAUSE
+                    PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE or
+                        PlaybackStateCompat.ACTION_SKIP_TO_NEXT or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                        PlaybackStateCompat.ACTION_SEEK_TO or PlaybackStateCompat.ACTION_PLAY_PAUSE
                 )
-                .setState(state, pos, 1.0f)
+                .setState(state, getPosition(), 1.0f)
                 .build()
         )
     }
 
-    // Media Notification controls & channels setup
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Pulse Audio Service Playback",
-                NotificationManager.IMPORTANCE_LOW
+                CHANNEL_ID, "Pulse Audio Service Playback", NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Playback controls and status"
                 setShowBadge(false)
             }
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
         }
     }
 
@@ -449,47 +505,36 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
     }
 
     private fun showNotification() {
-        val currentSong = getCurrentSong()
-        if (currentSong == null) {
+        val currentSong = getCurrentSong() ?: run {
             showPlaceholderNotification()
             return
         }
-
         val openIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
-        val pendingOpenIntent = PendingIntent.getActivity(
-            this, 0, openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val pendingOpen = PendingIntent.getActivity(
+            this, 0, openIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-
         val playPauseIcon = if (isPlaying()) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
-        val playPauseActionText = if (isPlaying()) "Pause" else "Play"
-
         val prevPending = PendingIntent.getBroadcast(this, 1, Intent("ACTION_PREV"), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val togglePending = PendingIntent.getBroadcast(this, 2, Intent("ACTION_TOGGLE"), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val nextPending = PendingIntent.getBroadcast(this, 3, Intent("ACTION_NEXT"), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-
-        val style = MediaStyle()
-            .setShowActionsInCompactView(0, 1, 2)
-            .setMediaSession(mediaSession?.sessionToken)
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(currentSong.title)
             .setContentText(currentSong.artist)
             .setSubText(currentSong.album)
-            .setContentIntent(pendingOpenIntent)
+            .setContentIntent(pendingOpen)
             .setOngoing(isPlaying())
             .setOnlyAlertOnce(true)
-            .setStyle(style)
+            .setStyle(MediaStyle().setShowActionsInCompactView(0, 1, 2).setMediaSession(mediaSession?.sessionToken))
             .addAction(android.R.drawable.ic_media_previous, "Previous", prevPending)
-            .addAction(playPauseIcon, playPauseActionText, togglePending)
+            .addAction(playPauseIcon, if (isPlaying()) "Pause" else "Play", togglePending)
             .addAction(android.R.drawable.ic_media_next, "Next", nextPending)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
-
         startForeground(NOTIFICATION_ID, notification)
     }
 
@@ -505,9 +550,7 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
 
     private fun registerMediaActionsReceiver() {
         val filter = IntentFilter().apply {
-            addAction("ACTION_PREV")
-            addAction("ACTION_TOGGLE")
-            addAction("ACTION_NEXT")
+            addAction("ACTION_PREV"); addAction("ACTION_TOGGLE"); addAction("ACTION_NEXT")
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(actionsReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -521,16 +564,11 @@ class PlaybackService : Service(), AudioManager.OnAudioFocusChangeListener, Medi
         super.onDestroy()
         serviceScope.cancel()
         stopPositionTracker()
-        try {
-            mediaPlayer?.reset()
-            mediaPlayer?.release()
-        } catch (_: Exception) {}
+        try { mediaPlayer?.reset(); mediaPlayer?.release() } catch (_: Exception) {}
         mediaPlayer = null
         mediaSession?.release()
         mediaSession = null
-        try {
-            unregisterReceiver(actionsReceiver)
-        } catch (_: Exception) {}
+        try { unregisterReceiver(actionsReceiver) } catch (_: Exception) {}
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             audioFocusRequest?.let { audioManager?.abandonAudioFocusRequest(it) }
         } else {

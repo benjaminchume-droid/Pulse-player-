@@ -5,7 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,10 +21,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
@@ -47,23 +42,22 @@ import com.pulseplayer.music.viewmodel.PlaybackViewModelFactory
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object Home : Screen("home", "Home", Icons.Default.Home)
-    object Library : Screen("library", "Library", Icons.Default.List)
-    object Search : Screen("search", "Search", Icons.Default.Search)
-    object Mixes : Screen("mixes", "Mixes", Icons.Default.MusicNote)
+    object Library : Screen("library", "Songs", Icons.Default.LibraryMusic)
+    object Playlists : Screen("playlists", "Playlists", Icons.Default.QueueMusic)
+    object Downloads : Screen("downloads", "Downloads", Icons.Default.Download)
     object Settings : Screen("settings", "Settings", Icons.Default.Settings)
+    object Search : Screen("search", "Search", Icons.Default.Search)
+    object Connect : Screen("connect", "Connect", Icons.Default.Groups)
 }
 
 class MainActivity : ComponentActivity() {
-
     private lateinit var viewModel: PlaybackViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         val database = MusicDatabase.getDatabase(applicationContext)
         val factory = PlaybackViewModelFactory(applicationContext, database.musicDao())
         viewModel = ViewModelProvider(this, factory)[PlaybackViewModel::class.java]
-
         setContent {
             PulsePlayerTheme {
                 MainLayoutContainer(viewModel, onExit = { finish() })
@@ -85,39 +79,30 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel, onExit: () -> Unit) {
     val isPlaying by viewModel.isPlaying.collectAsState()
     val position by viewModel.playbackPosition.collectAsState()
     val lyricsLoading by viewModel.lyricsLoading.collectAsState()
+    val repeatMode by viewModel.repeatMode.collectAsState()
 
     var isNowPlayingOpen by remember { mutableStateOf(false) }
+    var fullScreenLyrics by remember { mutableStateOf(false) }
+    var searchOpen by remember { mutableStateOf(false) }
 
-    // Open full player whenever a new track is selected / starts
     LaunchedEffect(currentSong?.id) {
-        if (currentSong != null) {
-            isNowPlayingOpen = true
-        }
+        if (currentSong != null) isNowPlayingOpen = true
     }
 
-    var isDockVisible by remember { mutableStateOf(true) }
-    var dockSizeStyle by remember { mutableStateOf("Compact") }
-
-    val navigationItems = listOf(
-        Screen.Home, Screen.Library, Screen.Search, Screen.Mixes, Screen.Settings
+    val bottomTabs = listOf(
+        Screen.Home,
+        Screen.Library,
+        Screen.Playlists,
+        Screen.Downloads,
+        Screen.Settings
     )
 
     BackHandler(enabled = true) {
         when {
+            fullScreenLyrics -> fullScreenLyrics = false
             isNowPlayingOpen -> isNowPlayingOpen = false
+            searchOpen -> searchOpen = false
             else -> onExit()
-        }
-    }
-
-    val dockVisibleState = rememberUpdatedState(isDockVisible)
-    val nestedScrollConnection = remember {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                val delta = available.y
-                if (delta < -12f && dockVisibleState.value) isDockVisible = false
-                else if (delta > 12f && !dockVisibleState.value) isDockVisible = true
-                return Offset.Zero
-            }
         }
     }
 
@@ -130,128 +115,124 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel, onExit: () -> Unit) {
 
         Scaffold(
             containerColor = Color.Transparent,
-            modifier = Modifier.nestedScroll(nestedScrollConnection)
-        ) { innerPadding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                NavHost(
-                    navController = navController,
-                    startDestination = Screen.Home.route,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    composable(Screen.Home.route) { HomeScreen(viewModel) }
-                    composable(Screen.Library.route) { LibraryScreen(viewModel) }
-                    composable(Screen.Search.route) { SearchScreen(viewModel) }
-                    composable(Screen.Mixes.route) { MixesScreen(viewModel) }
-                    composable(Screen.Settings.route) { SettingsScreen(viewModel) }
-                }
-
-                if (currentSong != null && !isNowPlayingOpen) {
-                    val playerBottomPadding = when {
-                        !isDockVisible -> 32.dp
-                        dockSizeStyle == "Expanded" -> 110.dp
-                        dockSizeStyle == "Compact" -> 90.dp
-                        else -> 74.dp
-                    }
-                    val smoothBottomOffset by animateDpAsState(
-                        targetValue = playerBottomPadding,
-                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                        label = "PlayerBottomOffset"
-                    )
-
-                    MiniPlayer(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = smoothBottomOffset),
-                        song = currentSong,
-                        isPlaying = isPlaying,
-                        onTogglePlayPause = { viewModel.togglePlayPause() },
-                        onSkipNext = { viewModel.skipNext() },
-                        onClick = { isNowPlayingOpen = true }
-                    )
-                }
-
-                AnimatedVisibility(
-                    visible = isDockVisible && !isNowPlayingOpen,
-                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 16.dp, start = 12.dp, end = 12.dp)
-                ) {
-                    val glassBackdropColor = if (isAmoled) Color(0xFF0F0F14) else Color(0x3D000000)
+            topBar = {
+                if (!isNowPlayingOpen) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(if (dockSizeStyle == "Expanded") 74.dp else if (dockSizeStyle == "Compact") 58.dp else 46.dp)
-                            .clip(RoundedCornerShape(30.dp))
-                            .background(glassBackdropColor)
-                            .border(
-                                width = 1.dp,
-                                brush = Brush.linearGradient(
-                                    colors = listOf(theme.accentColor, theme.glowColor.copy(alpha = 0.2f))
-                                ),
-                                shape = RoundedCornerShape(30.dp)
-                            )
-                            .padding(horizontal = 14.dp),
+                            .statusBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        IconButton(onClick = { isDockVisible = false }) {
-                            Icon(Icons.Default.VisibilityOff, "Retract", tint = theme.accentColor, modifier = Modifier.size(16.dp))
+                        Text(
+                            text = "Pulse",
+                            color = theme.accentColor,
+                            fontSize = 22.sp,
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            IconButton(onClick = {
+                                searchOpen = true
+                                navController.navigate(Screen.Search.route) {
+                                    launchSingleTop = true
+                                }
+                            }) {
+                                Icon(Icons.Default.Search, "Search", tint = Color.White)
+                            }
+                            IconButton(onClick = {
+                                navController.navigate(Screen.Connect.route) { launchSingleTop = true }
+                            }) {
+                                Icon(Icons.Default.Groups, "Listen Together", tint = Color.White)
+                            }
                         }
-                        navigationItems.forEach { screen ->
-                            val selected = currentRoute == screen.route
-                            Column(
+                    }
+                }
+            },
+            bottomBar = {
+                if (!isNowPlayingOpen) {
+                    Column {
+                        if (currentSong != null) {
+                            MiniPlayer(
+                                song = currentSong,
+                                isPlaying = isPlaying,
+                                onTogglePlayPause = { viewModel.togglePlayPause() },
+                                onSkipNext = { viewModel.skipNext() },
+                                onClick = { isNowPlayingOpen = true },
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .clickable {
-                                        navController.navigate(screen.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Icon(
-                                    screen.icon,
-                                    screen.title,
-                                    tint = if (selected) theme.accentColor else Color(0x66FFFFFF),
-                                    modifier = Modifier.size(22.dp)
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                                .clip(RoundedCornerShape(28.dp))
+                                .background(if (isAmoled) Color(0xFF0F0F14) else Color(0x3D000000))
+                                .border(
+                                    1.dp,
+                                    Brush.linearGradient(listOf(theme.accentColor, theme.glowColor.copy(alpha = 0.25f))),
+                                    RoundedCornerShape(28.dp)
                                 )
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            bottomTabs.forEach { screen ->
+                                val selected = currentRoute == screen.route
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            navController.navigate(screen.route) {
+                                                popUpTo(navController.graph.findStartDestination().id) {
+                                                    saveState = true
+                                                }
+                                                launchSingleTop = true
+                                                restoreState = true
+                                            }
+                                        }
+                                        .padding(vertical = 4.dp)
+                                ) {
+                                    Icon(
+                                        screen.icon,
+                                        screen.title,
+                                        tint = if (selected) theme.accentColor else Color(0x66FFFFFF),
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Text(
+                                        screen.title,
+                                        color = if (selected) theme.accentColor else Color.Gray,
+                                        fontSize = 9.sp
+                                    )
+                                }
                             }
-                        }
-                        IconButton(onClick = {
-                            dockSizeStyle = when (dockSizeStyle) {
-                                "Expanded" -> "Compact"
-                                "Compact" -> "Micro"
-                                else -> "Expanded"
-                            }
-                        }) {
-                            Icon(Icons.Default.ExpandMore, "Dock size", tint = theme.accentColor, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
-
-                if (!isDockVisible && !isNowPlayingOpen) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 12.dp)
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(Color(0x7A000000))
-                            .border(1.dp, theme.accentColor, CircleShape)
-                            .clickable { isDockVisible = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.KeyboardArrowUp, "Expand", tint = theme.accentColor)
-                    }
+            }
+        ) { padding ->
+            NavHost(
+                navController = navController,
+                startDestination = Screen.Home.route,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                composable(Screen.Home.route) { HomeScreen(viewModel) }
+                composable(Screen.Library.route) { LibraryScreen(viewModel) }
+                composable(Screen.Playlists.route) { PlaylistsScreen(viewModel) }
+                composable(Screen.Downloads.route) { DownloadsScreen(viewModel) }
+                composable(Screen.Settings.route) { SettingsScreen(viewModel) }
+                composable(Screen.Search.route) {
+                    SearchScreen(viewModel, onBack = {
+                        searchOpen = false
+                        navController.popBackStack()
+                    })
                 }
+                composable(Screen.Connect.route) { ConnectScreen(viewModel) }
             }
         }
 
@@ -261,6 +242,9 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel, onExit: () -> Unit) {
             isPlaying = isPlaying,
             playbackPosition = position,
             lyricsLoading = lyricsLoading,
+            repeatMode = repeatMode,
+            fullScreenLyrics = fullScreenLyrics,
+            onFullScreenLyrics = { fullScreenLyrics = it },
             onClose = { isNowPlayingOpen = false },
             onTogglePlayPause = { viewModel.togglePlayPause() },
             onSkipNext = { viewModel.skipNext() },
@@ -268,7 +252,10 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel, onExit: () -> Unit) {
             onSeekTo = { viewModel.seekTo(it) },
             onToggleFavorite = { currentSong?.let { viewModel.toggleFavorite(it) } },
             onFetchLyrics = { currentSong?.let { viewModel.fetchLyricsFor(it) } },
-            onEnrichMetadata = { currentSong?.let { viewModel.enrichSongMetadata(it) } }
+            onEnrichMetadata = { currentSong?.let { viewModel.enrichSongMetadata(it) } },
+            onCycleRepeat = { viewModel.cycleRepeatMode() },
+            onQueueNext = { /* handled in lists via swipe */ },
+            onSleepTimer = { viewModel.setSleepTimerMinutes(it) }
         )
     }
 }
