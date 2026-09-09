@@ -38,9 +38,9 @@ jobs:
       uses: gradle/gradle-build-action@v2
 
     - name: Create Keystore from Secret
-      if: env.KEYSTORE != null
+      if: env.ANDROID_KEYSTORE_BASE64 != null
       run: |
-        echo "${{ secrets.KEYSTORE }}" | base64 -d > android/app/release-key.jks
+        echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release-key.jks
         echo "KEYSTORE_PATH=android/app/release-key.jks" >> $GITHUB_ENV
         echo "✅ Keystore created"
 
