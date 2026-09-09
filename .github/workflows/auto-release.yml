@@ -44,7 +44,10 @@ jobs:
         echo "✅ Keystore created"
 
     - name: Build Signed Release
-      run: cd android && gradle assembleRelease
+      run: |
+        cd android
+        echo "🔨 Building release APK..."
+        gradle assembleRelease --info 2>&1 | tail -100
       env:
         KEYSTORE_PATH: android/app/release-key.jks
         PULSE_STORE_PASSWORD: ${{ secrets.PULSE_STORE_PASSWORD }}
@@ -55,10 +58,12 @@ jobs:
     - name: Find APK
       id: find_apk
       run: |
+        echo "🔍 Searching for APK..."
+        find android/app/build/outputs -type f -name "*.apk" 2>/dev/null || echo "No APKs found"
         APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
         if [ -z "$APK_PATH" ]; then
           echo "❌ APK not found!"
-          find android/app/build/outputs -type f
+          ls -la android/app/build/outputs/apk/ 2>/dev/null || echo "Output dir not found"
           exit 1
         fi
         echo "✅ APK: $APK_PATH"
