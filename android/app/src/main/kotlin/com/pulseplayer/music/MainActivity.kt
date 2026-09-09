@@ -60,7 +60,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Initialize SQLite Room database cache layers
         val database = MusicDatabase.getDatabase(applicationContext)
         val factory = PlaybackViewModelFactory(applicationContext, database.musicDao())
         viewModel = ViewModelProvider(this, factory)[PlaybackViewModel::class.java]
@@ -79,30 +78,30 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel, onExit: () -> Unit) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    // Active visual settings
     val theme by RealmManager.currentTheme.collectAsState()
     val isAmoled by RealmManager.amoledMode.collectAsState()
 
-    // Sound stats
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val position by viewModel.playbackPosition.collectAsState()
+    val lyricsLoading by viewModel.lyricsLoading.collectAsState()
 
     var isNowPlayingOpen by remember { mutableStateOf(false) }
 
-    // Retractable floating dock states
+    // Open full player whenever a new track is selected / starts
+    LaunchedEffect(currentSong?.id) {
+        if (currentSong != null) {
+            isNowPlayingOpen = true
+        }
+    }
+
     var isDockVisible by remember { mutableStateOf(true) }
-    var dockSizeStyle by remember { mutableStateOf("Compact") } // "Expanded", "Compact", "Micro"
+    var dockSizeStyle by remember { mutableStateOf("Compact") }
 
     val navigationItems = listOf(
-        Screen.Home,
-        Screen.Library,
-        Screen.Search,
-        Screen.Mixes,
-        Screen.Settings
+        Screen.Home, Screen.Library, Screen.Search, Screen.Mixes, Screen.Settings
     )
 
-    // Back button: close now-playing first, then finish activity (exits app)
     BackHandler(enabled = true) {
         when {
             isNowPlayingOpen -> isNowPlayingOpen = false
@@ -110,19 +109,13 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel, onExit: () -> Unit) {
         }
     }
 
-    // Scroll gesture listener for retractable docking panel.
-    // Uses a mutable ref so the NestedScrollConnection always sees current state.
     val dockVisibleState = rememberUpdatedState(isDockVisible)
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 val delta = available.y
-                if (delta < -12f && dockVisibleState.value) {
-                    isDockVisible = false
-                } else if (delta > 12f && !dockVisibleState.value) {
-                    isDockVisible = true
-                }
-                // Consume nothing so LazyColumns / scrollables still scroll normally
+                if (delta < -12f && dockVisibleState.value) isDockVisible = false
+                else if (delta > 12f && !dockVisibleState.value) isDockVisible = true
                 return Offset.Zero
             }
         }
@@ -133,7 +126,6 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel, onExit: () -> Unit) {
             .fillMaxSize()
             .background(if (isAmoled) Color.Black else BackgroundDark)
     ) {
-        // Holographic moving gradient background
         AnimatedGlowBackground(modifier = Modifier.fillMaxSize())
 
         Scaffold(
@@ -145,7 +137,6 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel, onExit: () -> Unit) {
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                // Primary screen Host
                 NavHost(
                     navController = navController,
                     startDestination = Screen.Home.route,
@@ -158,8 +149,7 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel, onExit: () -> Unit) {
                     composable(Screen.Settings.route) { SettingsScreen(viewModel) }
                 }
 
-                // 1. Floating Mini player sitting cleanly directly above docking items
-                if (currentSong != null) {
+                if (currentSong != null && !isNowPlayingOpen) {
                     val playerBottomPadding = when {
                         !isDockVisible -> 32.dp
                         dockSizeStyle == "Expanded" -> 110.dp
@@ -184,24 +174,15 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel, onExit: () -> Unit) {
                     )
                 }
 
-                // 2. Retractable Floating Glass Dock Navigation
                 AnimatedVisibility(
-                    visible = isDockVisible,
-                    enter = slideInVertically(
-                        initialOffsetY = { it },
-                        animationSpec = spring(stiffness = Spring.StiffnessMedium)
-                    ) + fadeIn(),
-                    exit = slideOutVertically(
-                        targetOffsetY = { it },
-                        animationSpec = spring(stiffness = Spring.StiffnessMedium)
-                    ) + fadeOut(),
+                    visible = isDockVisible && !isNowPlayingOpen,
+                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 16.dp, start = 12.dp, end = 12.dp)
                 ) {
                     val glassBackdropColor = if (isAmoled) Color(0xFF0F0F14) else Color(0x3D000000)
-
-                    // Unified Glass Dock Container
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -219,69 +200,31 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel, onExit: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        // Quick compact retract button
                         IconButton(onClick = { isDockVisible = false }) {
-                            Icon(
-                                imageVector = Icons.Default.VisibilityOff,
-                                contentDescription = "Retract Dock",
-                                tint = theme.accentColor,
-                                modifier = Modifier.size(16.dp)
-                            )
+                            Icon(Icons.Default.VisibilityOff, "Retract", tint = theme.accentColor, modifier = Modifier.size(16.dp))
                         }
-
-                        // Navigation tabs mapping loop
                         navigationItems.forEach { screen ->
                             val selected = currentRoute == screen.route
-
                             Column(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clickable {
                                         navController.navigate(screen.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
+                                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                             launchSingleTop = true
                                             restoreState = true
                                         }
                                     },
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = screen.icon,
-                                        contentDescription = screen.title,
-                                        tint = if (selected) theme.accentColor else Color(0x66FFFFFF),
-                                        modifier = Modifier.size(if (dockSizeStyle == "Micro") 18.dp else 22.dp)
-                                    )
-
-                                    // Top-tier Active Tab Neon Under Glow Spark line
-                                    if (selected) {
-                                        Box(
-                                            modifier = Modifier
-                                                .align(Alignment.BottomCenter)
-                                                .padding(top = 22.dp)
-                                                .width(18.dp)
-                                                .height(2.dp)
-                                                .background(theme.accentColor, CircleShape)
-                                        )
-                                    }
-                                }
-
-                                if (dockSizeStyle == "Expanded") {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = screen.title,
-                                        color = if (selected) theme.accentColor else Color.LightGray,
-                                        fontSize = 10.sp,
-                                        fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal
-                                    )
-                                }
+                                Icon(
+                                    screen.icon,
+                                    screen.title,
+                                    tint = if (selected) theme.accentColor else Color(0x66FFFFFF),
+                                    modifier = Modifier.size(22.dp)
+                                )
                             }
                         }
-
-                        // Cycle Dock Style Sizes Button
                         IconButton(onClick = {
                             dockSizeStyle = when (dockSizeStyle) {
                                 "Expanded" -> "Compact"
@@ -289,20 +232,12 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel, onExit: () -> Unit) {
                                 else -> "Expanded"
                             }
                         }) {
-                            Icon(
-                                imageVector = if (dockSizeStyle == "Expanded") Icons.Default.ExpandMore
-                                              else if (dockSizeStyle == "Compact") Icons.Default.ExpandLess
-                                              else Icons.Default.SettingsInputAntenna,
-                                contentDescription = "Cycle Dock Size",
-                                tint = theme.accentColor,
-                                modifier = Modifier.size(18.dp)
-                            )
+                            Icon(Icons.Default.ExpandMore, "Dock size", tint = theme.accentColor, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
 
-                // 3. Float Chevron handle visible only when dock is retracted to pull it back up
-                if (!isDockVisible) {
+                if (!isDockVisible && !isNowPlayingOpen) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -314,29 +249,26 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel, onExit: () -> Unit) {
                             .clickable { isDockVisible = true },
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowUp,
-                            contentDescription = "Expand Dock Controls",
-                            tint = theme.accentColor,
-                            modifier = Modifier.size(24.dp)
-                        )
+                        Icon(Icons.Default.KeyboardArrowUp, "Expand", tint = theme.accentColor)
                     }
                 }
             }
         }
 
-        // 4. Immersive Full screen player sheet overlay
         NowPlayingOverlay(
             isOpen = isNowPlayingOpen,
             song = currentSong,
             isPlaying = isPlaying,
             playbackPosition = position,
+            lyricsLoading = lyricsLoading,
             onClose = { isNowPlayingOpen = false },
             onTogglePlayPause = { viewModel.togglePlayPause() },
             onSkipNext = { viewModel.skipNext() },
             onSkipPrevious = { viewModel.skipPrevious() },
             onSeekTo = { viewModel.seekTo(it) },
-            onToggleFavorite = { currentSong?.let { viewModel.toggleFavorite(it) } }
+            onToggleFavorite = { currentSong?.let { viewModel.toggleFavorite(it) } },
+            onFetchLyrics = { currentSong?.let { viewModel.fetchLyricsFor(it) } },
+            onEnrichMetadata = { currentSong?.let { viewModel.enrichSongMetadata(it) } }
         )
     }
 }
