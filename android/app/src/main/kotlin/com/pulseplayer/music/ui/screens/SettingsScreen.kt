@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pulseplayer.music.ui.components.GlassCard
+import com.pulseplayer.music.ui.components.UpdateSection
 import com.pulseplayer.music.ui.theme.*
 import com.pulseplayer.music.viewmodel.PlaybackViewModel
 import kotlinx.coroutines.delay
@@ -39,18 +40,17 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val songs by viewModel.songs.collectAsState()
+    val isEnriching by viewModel.isEnriching.collectAsState()
     val scrollState = rememberScrollState()
-    
-    // Bind to our brand new global Realm state engine
+
     val activeRealm by RealmManager.currentTheme.collectAsState()
     val performanceMode by RealmManager.performanceMode.collectAsState()
     val amoledMode by RealmManager.amoledMode.collectAsState()
-    
-    // Bluetooth Headset connection states
+
     var btScanning by remember { mutableStateOf(false) }
     var btStatusText by remember { mutableStateOf("Disconnected") }
     var activeBtDevice by remember { mutableStateOf<String?>(null) }
-    
+
     val scope = rememberCoroutineScope()
 
     Column(
@@ -60,7 +60,6 @@ fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        // Headers
         Column(modifier = Modifier.padding(top = 16.dp)) {
             Text(
                 text = "SYSTEM SETTINGS",
@@ -76,197 +75,102 @@ fun SettingsScreen(
             )
         }
 
-        // 1. PULSE REALMS CAROUSEL MODULE
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "PULSE REALMS ACTIVE INTERFACE",
-                    color = activeRealm.accentColor,
-                    fontWeight = FontWeight.Bold,
-                    style = Typography.labelSmall
-                )
-                Text(
-                    text = "15 DIMENSIONS AVAILABLE",
-                    color = if (activeRealm.isLight) Color.DarkGray else Color.Gray,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+            Text(
+                text = "SOFTWARE UPDATES",
+                color = if (activeRealm.isLight) Color.DarkGray else Color.LightGray,
+                style = Typography.labelSmall
+            )
+            UpdateSection()
+        }
 
-            // Horizontal Theme Preview Matrix Slider
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(horizontal = 4.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-            ) {
-                items(RealmManager.realms) { realm ->
-                    val isSelected = activeRealm.id == realm.id
-
-                    // Elastic sizing transitions for Center-Focus effect
-                    val scaleFactor by animateFloatAsState(
-                        targetValue = if (isSelected) 1.05f else 0.95f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessLow
-                        ),
-                        label = "ScaleFactor"
-                    )
-
-                    val cardBorder = if (isSelected) {
-                        realm.accentColor
-                    } else {
-                        if (activeRealm.isLight) Color.LightGray.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.12f)
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .width(200.dp)
-                            .height(140.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(
-                                if (isSelected) realm.gradientColors[0]
-                                else (if (activeRealm.isLight) Color(0x35E2E8F0) else Color(0x19FFFFFF))
-                            )
-                            .border(
-                                width = if (isSelected) 2.dp else 1.dp,
-                                color = cardBorder,
-                                shape = RoundedCornerShape(20.dp)
-                            )
-                            .clickable { RealmManager.selectTheme(realm.id) }
-                            .padding(16.dp),
-                        contentAlignment = Alignment.BottomStart
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            // Emblem glyph header
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(realm.accentColor.copy(alpha = 0.2f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(text = realm.glyphEmblems, fontSize = 16.sp)
-                                }
-
-                                if (isSelected) {
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(realm.accentColor)
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(
-                                            text = "ACTIVE",
-                                            color = if (realm.isLight) Color.White else Color.Black,
-                                            fontSize = 8.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.weight(1f))
-
-                            Text(
-                                text = realm.name,
-                                color = if (isSelected || !activeRealm.isLight) Color.White else Color.Black,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = realm.soundstageName,
-                                color = if (isSelected || !activeRealm.isLight) Color.LightGray else Color.DarkGray,
-                                fontSize = 10.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Descriptive readout for active selection
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                text = "LIBRARY METADATA",
+                color = if (activeRealm.isLight) Color.DarkGray else Color.LightGray,
+                style = Typography.labelSmall
+            )
             GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "REALM IDENTITY SPECTROMETER",
-                        color = activeRealm.accentColor,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        style = Typography.labelSmall
-                    )
-                    Text(
-                        text = activeRealm.description,
+                        "Enrich tags for local / downloaded songs",
                         color = if (activeRealm.isLight) Color.Black else Color.White,
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.fillMaxWidth()
+                    Text(
+                        "Reads embedded ID3 tags and fills gaps via MusicBrainz (title, artist, album, year).",
+                        color = Color.Gray,
+                        fontSize = 11.sp
+                    )
+                    Text("${songs.size} tracks in library", color = Color.Gray, fontSize = 11.sp)
+                    Button(
+                        onClick = { viewModel.enrichAllMetadata() },
+                        enabled = !isEnriching,
+                        colors = ButtonDefaults.buttonColors(containerColor = activeRealm.accentColor),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        Column {
-                            Text("Atmospheric Deck", color = Color.Gray, fontSize = 9.sp)
-                            Text(if (activeRealm.atmosphericDepth) "CONNECTED" else "STANDBY", color = activeRealm.accentColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Column {
-                            Text("Motion Physics", color = Color.Gray, fontSize = 9.sp)
-                            Text(activeRealm.motionStyle.uppercase(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Column {
-                            Text("Visualizer Preset", color = Color.Gray, fontSize = 9.sp)
-                            Text(activeRealm.visualizerStyle.uppercase(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        if (isEnriching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color.Black,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Enriching…", fontSize = 12.sp)
+                        } else {
+                            Text("Enrich all metadata", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             }
         }
 
-        // 2. RENDERING HARDWARE PERFORMANCE SELECTOR
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                text = "GPU HARDWARE ACCELERATION PROFILE",
-                color = if (activeRealm.isLight) Color.DarkGray else Color.LightGray,
+                text = "PULSE REALMS ACTIVE INTERFACE",
+                color = activeRealm.accentColor,
+                fontWeight = FontWeight.Bold,
                 style = Typography.labelSmall
             )
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            ) {
+                items(RealmManager.realms) { realm ->
+                    val isSelected = activeRealm.id == realm.id
+                    val cardBorder = if (isSelected) realm.accentColor else Color.White.copy(alpha = 0.12f)
+                    Box(
+                        modifier = Modifier
+                            .width(200.dp)
+                            .height(140.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                if (isSelected) realm.gradientColors[0] else Color(0x19FFFFFF)
+                            )
+                            .border(if (isSelected) 2.dp else 1.dp, cardBorder, RoundedCornerShape(20.dp))
+                            .clickable { RealmManager.selectTheme(realm.id) }
+                            .padding(16.dp),
+                        contentAlignment = Alignment.BottomStart
                     ) {
-                        Column {
-                            Text("Atmospheric Rendering Level", color = if (activeRealm.isLight) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("Optimize particle buffers & gas sweeps", color = Color.Gray, fontSize = 11.sp)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(activeRealm.accentColor.copy(alpha = 0.15f))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(performanceMode.name, color = activeRealm.accentColor, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(text = realm.glyphEmblems, fontSize = 16.sp)
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text(realm.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text(realm.soundstageName, color = Color.LightGray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
+                }
+            }
+        }
 
-                    // Selector buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("GPU HARDWARE ACCELERATION PROFILE", color = Color.LightGray, style = Typography.labelSmall)
+            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Atmospheric Rendering Level", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PerformanceMode.values().forEach { mode ->
                             val isSel = performanceMode == mode
                             Box(
@@ -278,12 +182,7 @@ fun SettingsScreen(
                                     .padding(8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = mode.name,
-                                    color = if (isSel) (if (activeRealm.isLight) Color.White else Color.Black) else Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Text(mode.name, color = if (isSel) Color.Black else Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -291,32 +190,13 @@ fun SettingsScreen(
             }
         }
 
-        // 3. AMOLED BLACKOUT SYSTEM
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                text = "AMOLED OLED POWER CONSERVATION",
-                color = if (activeRealm.isLight) Color.DarkGray else Color.LightGray,
-                style = Typography.labelSmall
-            )
+            Text("AMOLED OLED POWER CONSERVATION", color = Color.LightGray, style = Typography.labelSmall)
             GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "AMOLED True-Blackout Mode",
-                            color = if (activeRealm.isLight) Color.Black else Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                        Text(
-                            text = "Disable color sweeps. Force pixels to off state on OLED panels to prolong battery.",
-                            color = Color.Gray,
-                            fontSize = 11.sp,
-                            lineHeight = 14.sp
-                        )
+                        Text("AMOLED True-Blackout Mode", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Force pixels off on OLED panels to save battery.", color = Color.Gray, fontSize = 11.sp)
                     }
                     Switch(
                         checked = amoledMode,
@@ -330,142 +210,45 @@ fun SettingsScreen(
             }
         }
 
-        // Bluetooth Audio Pairing Module
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                text = "COMMUNICATION LINK",
-                color = if (activeRealm.isLight) Color.DarkGray else Color.LightGray,
-                style = Typography.labelSmall
-            )
+            Text("COMMUNICATION LINK", color = Color.LightGray, style = Typography.labelSmall)
             GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = "Bluetooth Audio Output",
-                                color = if (activeRealm.isLight) Color.Black else Color.White,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = if (activeBtDevice != null) "Connected: $activeBtDevice" else btStatusText,
-                                color = if (activeBtDevice != null) activeRealm.accentColor else Color.Gray,
-                                fontSize = 11.sp
-                            )
-                        }
-
-                        if (btScanning) {
-                            CircularProgressIndicator(color = activeRealm.accentColor, modifier = Modifier.size(20.dp))
-                        } else {
-                            Button(
-                                onClick = {
-                                    btScanning = true
-                                    btStatusText = "Scanning for devices..."
-                                    activeBtDevice = null
-                                    scope.launch {
-                                        delay(2500) // Simulate headset discovery
-                                        activeBtDevice = "Nothing Ear (a)"
-                                        btStatusText = "Connected"
-                                        btScanning = false
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = activeRealm.accentColor, contentColor = if (activeRealm.isLight) Color.White else Color.Black),
-                                shape = RoundedCornerShape(12.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    "SCAN",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    style = Typography.labelSmall
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Library Index and Diagnostics
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                text = "STORAGE ENGINE METRICS",
-                color = if (activeRealm.isLight) Color.DarkGray else Color.LightGray,
-                style = Typography.labelSmall
-            )
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Scanned File Sensors", color = Color.Gray, fontSize = 12.sp)
-                        Text("${songs.size} Audio Tracks", color = if (activeRealm.isLight) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                    Divider(color = Color(0x19FFFFFF))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Audio Backend Engine", color = Color.Gray, fontSize = 12.sp)
-                        Text("MediaPlayer API", color = activeRealm.accentColor, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                    Divider(color = Color(0x19FFFFFF))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Cache Database", color = Color.Gray, fontSize = 12.sp)
-                        Text("Room DB (SQLite)", color = if (activeRealm.isLight) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-
-        // Application Credits
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                text = "ABOUT PULSE PLAYER",
-                color = if (activeRealm.isLight) Color.DarkGray else Color.LightGray,
-                style = Typography.labelSmall
-            )
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(Color(0x19FFFFFF)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Info, contentDescription = null, tint = if (activeRealm.isLight) Color.Black else Color.White)
-                    }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column {
-                        Text(
-                            text = "Pulse Player Native Client",
-                            color = if (activeRealm.isLight) Color.Black else Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Version 1.1.0-Realms (Kotlin/Compose)",
-                            color = Color.Gray,
-                            fontSize = 11.sp
-                        )
-                        Text(
-                            text = "Developed with modular high frame-rate rendering pipelines.",
-                            color = Color.Gray,
-                            fontSize = 9.sp,
-                            lineHeight = 12.sp
-                        )
+                        Text("Bluetooth Audio Output", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text(if (activeBtDevice != null) "Connected: $activeBtDevice" else btStatusText, color = if (activeBtDevice != null) activeRealm.accentColor else Color.Gray, fontSize = 11.sp)
+                    }
+                    if (btScanning) {
+                        CircularProgressIndicator(color = activeRealm.accentColor, modifier = Modifier.size(20.dp))
+                    } else {
+                        Button(
+                            onClick = {
+                                btScanning = true
+                                btStatusText = "Scanning…"
+                                scope.launch {
+                                    delay(2000)
+                                    activeBtDevice = "Nothing Ear (a)"
+                                    btStatusText = "Connected"
+                                    btScanning = false
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = activeRealm.accentColor, contentColor = Color.Black),
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("SCAN", fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                    }
+                }
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("ABOUT PULSE PLAYER", color = Color.LightGray, style = Typography.labelSmall)
+            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.Default.Info, null, tint = Color.White)
+                    Column {
+                        Text("Pulse Player Native Client", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("Version 1.0.2 (Kotlin/Compose)", color = Color.Gray, fontSize = 11.sp)
+                        Text("Updates · Lyrics · Metadata enrichment", color = Color.Gray, fontSize = 9.sp)
                     }
                 }
             }
