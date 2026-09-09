@@ -37,20 +37,20 @@ jobs:
     - name: Setup Gradle
       uses: gradle/gradle-build-action@v2
 
-    - name: Build Signed Release
+    - name: Create Keystore from Secret
       if: env.KEYSTORE != null
+      run: |
+        echo "${{ secrets.KEYSTORE }}" | base64 -d > android/app/release-key.jks
+        echo "KEYSTORE_PATH=android/app/release-key.jks" >> $GITHUB_ENV
+        echo "✅ Keystore created"
+
+    - name: Build Signed Release
       run: cd android && gradle assembleRelease
       env:
-        KEYSTORE: ${{ secrets.KEYSTORE }}
+        KEYSTORE_PATH: android/app/release-key.jks
         KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        GRADLE_OPTS: "-Xmx2048m -XX:MaxMetaspaceSize=512m"
-
-    - name: Build Release (Unsigned)
-      if: env.KEYSTORE == null
-      run: cd android && gradle assembleRelease
-      env:
         GRADLE_OPTS: "-Xmx2048m -XX:MaxMetaspaceSize=512m"
 
     - name: Find APK
@@ -68,7 +68,7 @@ jobs:
     - name: Generate Changelog
       run: |
         cat > changelog.md << EOF
-        ## Pulse Player v${{ steps.version.outputs.version_name }}
+        ## Pulse Player v\${{ steps.version.outputs.version_name }}
         
         ### 🎉 Features
         - Download integration with real-time progress
@@ -77,9 +77,9 @@ jobs:
         - Streaming icon in navigation
         
         ### 📦 Build
-        - Version: ${{ steps.version.outputs.version_name }}
-        - Code: ${{ steps.version.outputs.version_code }}
-        - Signed: ${{ env.KEYSTORE != null && 'Yes ✅' || 'No ⚠️' }}
+        - Version: \${{ steps.version.outputs.version_name }}
+        - Code: \${{ steps.version.outputs.version_code }}
+        - Signed: Yes ✅
         
         ### ⚠️ Legal
         - Personal offline use only

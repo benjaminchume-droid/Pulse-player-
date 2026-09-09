@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
+    id 'kotlin-kapt'
 }
 
 android {
@@ -17,15 +18,10 @@ android {
 
     signingConfigs {
         release {
-            if (System.getenv("KEYSTORE") != null) {
-                def keystoreFile = file("${rootProject.buildDir}/release-key.jks")
-                keystoreFile.bytes = System.getenv("KEYSTORE").decodeBase64()
-                
-                storeFile keystoreFile
-                storePassword System.getenv("KEYSTORE_PASSWORD")
-                keyAlias System.getenv("KEY_ALIAS")
-                keyPassword System.getenv("KEY_PASSWORD")
-            }
+            storeFile file("${System.getenv('KEYSTORE_PATH') ?: 'release-key.jks'}")
+            storePassword System.getenv('KEYSTORE_PASSWORD') ?: ''
+            keyAlias System.getenv('KEY_ALIAS') ?: ''
+            keyPassword System.getenv('KEY_PASSWORD') ?: ''
         }
     }
 
@@ -33,6 +29,7 @@ android {
         release {
             signingConfig signingConfigs.release
             minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -53,6 +50,12 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion '1.5.8'
     }
+
+    packagingOptions {
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+    }
 }
 
 dependencies {
@@ -67,6 +70,6 @@ dependencies {
     implementation 'androidx.navigation:navigation-compose:2.7.6'
     implementation 'io.coil-kt:coil-compose:2.5.0'
     implementation 'androidx.room:room-runtime:2.6.1'
-    annotationProcessor 'androidx.room:room-compiler:2.6.1'
+    kapt 'androidx.room:room-compiler:2.6.1'
     implementation 'androidx.room:room-ktx:2.6.1'
 }
