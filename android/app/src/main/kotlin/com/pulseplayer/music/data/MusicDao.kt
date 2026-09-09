@@ -4,7 +4,6 @@ import androidx.room.*
 
 @Dao
 interface MusicDao {
-    // Songs operations
     @Query("SELECT * FROM songs ORDER BY title ASC")
     suspend fun getAllSongs(): List<Song>
 
@@ -23,7 +22,28 @@ interface MusicDao {
     @Query("UPDATE songs SET playCount = playCount + 1 WHERE id = :id")
     suspend fun incrementPlayCount(id: Long)
 
-    // Playlists operations
+    @Query("UPDATE songs SET lyrics = :lyrics, syncedLyrics = :syncedLyrics WHERE id = :id")
+    suspend fun updateLyrics(id: Long, lyrics: String, syncedLyrics: String)
+
+    @Query("""
+        UPDATE songs SET title = :title, artist = :artist, album = :album,
+        albumArtist = :albumArtist, year = :year, genre = :genre,
+        coverUrl = :coverUrl, metadataEnriched = 1 WHERE id = :id
+    """)
+    suspend fun updateMetadata(
+        id: Long,
+        title: String,
+        artist: String,
+        album: String,
+        albumArtist: String,
+        year: Int,
+        genre: String,
+        coverUrl: String
+    )
+
+    @Query("SELECT * FROM songs WHERE id = :id LIMIT 1")
+    suspend fun getSongById(id: Long): Song?
+
     @Query("SELECT * FROM playlists ORDER BY createdAt DESC")
     suspend fun getAllPlaylists(): List<Playlist>
 
