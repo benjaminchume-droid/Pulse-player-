@@ -2,6 +2,7 @@ package com.pulseplayer.music
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -17,7 +18,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -40,7 +40,6 @@ import com.pulseplayer.music.ui.components.MiniPlayer
 import com.pulseplayer.music.ui.components.NowPlayingOverlay
 import com.pulseplayer.music.ui.screens.*
 import com.pulseplayer.music.ui.theme.BackgroundDark
-import com.pulseplayer.music.ui.theme.NeonCyan
 import com.pulseplayer.music.ui.theme.PulsePlayerTheme
 import com.pulseplayer.music.ui.theme.RealmManager
 import com.pulseplayer.music.viewmodel.PlaybackViewModel
@@ -68,14 +67,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             PulsePlayerTheme {
-                MainLayoutContainer(viewModel)
+                MainLayoutContainer(viewModel, onExit = { finish() })
             }
         }
     }
 }
 
 @Composable
-fun MainLayoutContainer(viewModel: PlaybackViewModel) {
+fun MainLayoutContainer(viewModel: PlaybackViewModel, onExit: () -> Unit) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -103,17 +102,28 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel) {
         Screen.Settings
     )
 
-    // Scroll gesture listener for retractable docking panel
+    // Back button: close now-playing first, then finish activity (exits app)
+    BackHandler(enabled = true) {
+        when {
+            isNowPlayingOpen -> isNowPlayingOpen = false
+            else -> onExit()
+        }
+    }
+
+    // Scroll gesture listener for retractable docking panel.
+    // Uses a mutable ref so the NestedScrollConnection always sees current state.
+    val dockVisibleState = rememberUpdatedState(isDockVisible)
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
-            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 val delta = available.y
-                if (delta < -15f) { // Scrolling down
-                    if (isDockVisible) isDockVisible = false
-                } else if (delta > 15f) { // Scrolling up
-                    if (!isDockVisible) isDockVisible = true
+                if (delta < -12f && dockVisibleState.value) {
+                    isDockVisible = false
+                } else if (delta > 12f && !dockVisibleState.value) {
+                    isDockVisible = true
                 }
-                return androidx.compose.ui.geometry.Offset.Zero
+                // Consume nothing so LazyColumns / scrollables still scroll normally
+                return Offset.Zero
             }
         }
     }
@@ -280,8 +290,8 @@ fun MainLayoutContainer(viewModel: PlaybackViewModel) {
                             }
                         }) {
                             Icon(
-                                imageVector = if (dockSizeStyle == "Expanded") Icons.Default.ExpandMore 
-                                              else if (dockSizeStyle == "Compact") Icons.Default.ExpandLess 
+                                imageVector = if (dockSizeStyle == "Expanded") Icons.Default.ExpandMore
+                                              else if (dockSizeStyle == "Compact") Icons.Default.ExpandLess
                                               else Icons.Default.SettingsInputAntenna,
                                 contentDescription = "Cycle Dock Size",
                                 tint = theme.accentColor,
