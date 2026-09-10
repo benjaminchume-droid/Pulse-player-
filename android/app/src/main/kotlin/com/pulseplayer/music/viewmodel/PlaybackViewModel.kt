@@ -18,6 +18,9 @@ import com.pulseplayer.music.data.RepeatMode
 import com.pulseplayer.music.data.Song
 import com.pulseplayer.music.lyrics.LyricsRepository
 import com.pulseplayer.music.metadata.MetadataEnricher
+import com.pulseplayer.music.metadata.MetadataResolver
+import com.pulseplayer.music.recognition.RecognitionCoordinator
+import com.pulseplayer.music.recognition.RecognitionStatus
 import com.pulseplayer.music.service.PlaybackService
 import com.pulseplayer.music.sources.SourceRegistry
 import com.pulseplayer.music.sources.StreamResult
@@ -35,6 +38,8 @@ class PlaybackViewModel(
     private var playbackService: PlaybackService? = null
     @Volatile private var isBound = false
     private var pendingPlay: Pair<List<Song>, Song>? = null
+
+    private val recognition = RecognitionCoordinator(context)
 
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
     val songs: StateFlow<List<Song>> = _songs
@@ -82,6 +87,9 @@ class PlaybackViewModel(
     init {
         loadCachedData()
         bindPlaybackService()
+        viewModelScope.launch(Dispatchers.IO) {
+            try { recognition.initialize() } catch (_: Exception) {}
+        }
     }
 
     private fun loadCachedData() {
@@ -124,7 +132,10 @@ class PlaybackViewModel(
                     while (c.moveToNext()) {
                         val id = c.getLong(idCol)
                         var title = c.getString(titleCol) ?: "Unnamed Track"
-                        if (title.all { it.isDigit() }) title = "Unnamed Track"
+                        // Never keep pure MediaStore-style numeric titles
+                        if (title.all { it.isDigit() } || title.matches(Regex("^\\d{5,}$"))) {
+                            title = "Unnamed Track"
+                        }
                         val path = Uri.withAppendedPath(collection, id.toString()).toString()
                         fetched.add(
                             Song(
@@ -151,9 +162,58 @@ class PlaybackViewModel(
         }
     }
 
+    /** Audio-ID while playing — once per song id until force. */
+    private fun maybeRecognizeWhilePlaying(song: Song) {
+        if (song.metadataEnriched || song.recognitionId.isNotBlank()) return
+        if (song.path.isBlank() || song.path.startsWith("http")) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val key = "${song.id}:${song.path}"
+                val result = recognition.recognizeWhilePlaying(key, song.path)
+                if (result.status != RecognitionStatus.SUCCESS) return@launch
+                if (result.errorMessage == "skipped_already_identified") return@launch
+                val match = result.matches.firstOrNull() ?: return@launch
+                if (!match.isUsableTitle()) return@launch
+                val canonical = MetadataResolver.fromMatch(match) ?: return@launch
+                musicDao.updateMetadata(
+                    id = song.id,
+                    title = canonical.title,
+                    artist = canonical.artist,
+                    album = canonical.album ?: song.album,
+                    albumArtist = canonical.albumArtist ?: "",
+                    year = canonical.year ?: 0,
+                    genre = canonical.genre ?: song.genre,
+                    coverUrl = canonical.artworkUrl ?: song.coverUrl,
+                    titleProvenance = "automatic",
+                    artistProvenance = "automatic",
+                    albumProvenance = "automatic",
+                    recognitionId = match.id,
+                    lastRecognizedAt = System.currentTimeMillis()
+                )
+                if (song.lyrics.isBlank()) {
+                    val lyrics = LyricsRepository.fetchLyrics(
+                        canonical.title, canonical.artist, canonical.album.orEmpty(),
+                        (song.duration / 1000).toInt()
+                    )
+                    if (lyrics != null) musicDao.updateLyrics(song.id, lyrics.plain, lyrics.synced)
+                }
+                recognition.markIdentified(key)
+                val updated = musicDao.getSongById(song.id)
+                withContext(Dispatchers.Main) {
+                    _songs.value = musicDao.getAllSongs()
+                    if (_currentSong.value?.id == song.id) _currentSong.value = updated
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     fun enrichSongMetadata(song: Song) {
         viewModelScope.launch {
             try {
+                // Prefer audio recognition once, then text enrichers
+                maybeRecognizeWhilePlaying(song)
                 val meta = MetadataEnricher.enrich(context, song)
                 if (!MetadataEnricher.isValidTitle(meta.title)) return@launch
                 musicDao.updateMetadata(
@@ -270,7 +330,6 @@ class PlaybackViewModel(
     }
 
     fun playPlaylist(playlist: Playlist) {
-        // Play all local songs as a simple fallback when playlist song links are not stored
         viewModelScope.launch {
             val tracks = musicDao.getAllSongs()
             if (tracks.isNotEmpty()) playSong(tracks, tracks.first())
@@ -328,6 +387,7 @@ class PlaybackViewModel(
             pendingPlay = songsList to songToPlay
             bindPlaybackService()
         }
+        maybeRecognizeWhilePlaying(songToPlay)
         viewModelScope.launch {
             try {
                 musicDao.incrementPlayCount(songToPlay.id)
@@ -367,7 +427,10 @@ class PlaybackViewModel(
         }
     }
 
-    override fun onSongChanged(song: Song?) { _currentSong.value = song }
+    override fun onSongChanged(song: Song?) {
+        _currentSong.value = song
+        if (song != null) maybeRecognizeWhilePlaying(song)
+    }
     override fun onPlaybackStatusChanged(isPlaying: Boolean) { _isPlaying.value = isPlaying }
     override fun onPositionUpdate(positionMs: Long) { _playbackPosition.value = positionMs }
     override fun onRepeatModeChanged(mode: RepeatMode) { _repeatMode.value = mode }
