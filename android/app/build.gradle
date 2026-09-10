@@ -12,25 +12,39 @@ android {
         applicationId "com.pulseplayer.music"
         minSdk 26
         targetSdk 34
-        versionCode 3
-        versionName "1.0.3"
+        versionCode 4
+        versionName "1.0.4"
+
+        buildConfigField "String", "AUDD_API_TOKEN", "\"${System.getenv('AUDD_API_TOKEN') ?: ''}\""
+        buildConfigField "String", "SHAZAM_DEVELOPER_TOKEN", "\"${System.getenv('SHAZAM_DEVELOPER_TOKEN') ?: ''}\""
     }
 
     signingConfigs {
         release {
-            storeFile file(System.getenv('KEYSTORE_PATH') ?: 'release-key.jks')
-            storePassword System.getenv('PULSE_STORE_PASSWORD') ?: ''
-            keyAlias System.getenv('PULSE_KEY_ALIAS') ?: ''
-            keyPassword System.getenv('PULSE_KEY_PASSWORD') ?: ''
+            def ks = file("keystores/release-key.jks")
+            def ksAlt = file("release-key.jks")
+            if (ks.exists()) {
+                storeFile ks
+            } else if (ksAlt.exists()) {
+                storeFile ksAlt
+            }
+            storePassword System.getenv('PULSE_STORE_PASSWORD') ?: (project.findProperty('pulseStorePassword') ?: '')
+            keyAlias System.getenv('PULSE_KEY_ALIAS') ?: (project.findProperty('pulseKeyAlias') ?: '')
+            keyPassword System.getenv('PULSE_KEY_PASSWORD') ?: (project.findProperty('pulseKeyPassword') ?: '')
         }
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            if (file("keystores/release-key.jks").exists() || file("release-key.jks").exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
         }
     }
 
@@ -40,18 +54,20 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = '17'
+        freeCompilerArgs += ["-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"]
     }
 
     buildFeatures {
         compose true
+        buildConfig true
     }
 
     composeOptions {
         kotlinCompilerExtensionVersion '1.5.8'
     }
 
-    packagingOptions {
+    packaging {
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
         }
@@ -62,27 +78,38 @@ dependencies {
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
     implementation 'androidx.activity:activity-compose:1.8.2'
-    implementation platform('androidx.compose:compose-bom:2023.08.00')
+    implementation platform('androidx.compose:compose-bom:2023.10.01')
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.ui:ui-graphics'
     implementation 'androidx.compose.ui:ui-tooling-preview'
     implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-extended'
     implementation 'androidx.navigation:navigation-compose:2.7.6'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
     implementation 'io.coil-kt:coil-compose:2.5.0'
+
     implementation 'androidx.room:room-runtime:2.6.1'
-    kapt 'androidx.room:room-compiler:2.6.1'
     implementation 'androidx.room:room-ktx:2.6.1'
-    
-    // ShazamKit for music recognition
-    implementation 'com.shazam:shazamkit-android:1.0.0'
-    
-    // JAudioTagger for metadata writing
-    implementation 'org:jaudiotagger:2.0.3'
-    
-    // WorkManager for background scanning
+    kapt 'androidx.room:room-compiler:2.6.1'
+
     implementation 'androidx.work:work-runtime-ktx:2.9.0'
-    
-    // Media3 for playback
-    implementation 'androidx.media3:media3-exoplayer:1.2.0'
-    implementation 'androidx.media3:media3-session:1.2.0'
+    implementation 'androidx.media:media:1.7.0'
+    implementation 'androidx.browser:browser:1.7.0'
+
+    // Official tag library (Maven Central) — not the invalid org:jaudiotagger coord
+    implementation 'net.jthink:jaudiotagger:3.0.1'
+
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    // Optional local ShazamKit AAR from Apple (place at app/libs/shazamkit-android-release.aar)
+    // Does NOT exist on Maven Central — do not use com.shazam:shazamkit-android
+    def shazamAar = file('libs/shazamkit-android-release.aar')
+    if (shazamAar.exists()) {
+        implementation files(shazamAar)
+        implementation 'com.squareup.retrofit2:retrofit:2.11.0'
+        implementation 'com.squareup.retrofit2:converter-gson:2.11.0'
+    }
+
+    debugImplementation 'androidx.compose.ui:ui-tooling'
 }
