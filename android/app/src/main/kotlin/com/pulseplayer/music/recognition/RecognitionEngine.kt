@@ -1,9 +1,7 @@
 package com.pulseplayer.music.recognition
 
-/**
- * Audio recognition engine. Implementations must use authorized APIs only
- * (ShazamKit with Apple developer token, AudD, etc.). No scraping.
- */
+import com.pulseplayer.music.data.ConfidenceLevel
+
 interface RecognitionEngine {
     suspend fun initialize(): Boolean
     suspend fun recognizeFromFile(filePath: String): RecognitionResult
@@ -25,10 +23,6 @@ enum class RecognitionStatus {
     SUCCESS, NO_MATCH, AMBIGUOUS, ERROR, TIMEOUT, NETWORK_ERROR, PERMISSION_DENIED, UNAVAILABLE
 }
 
-enum class ConfidenceLevel {
-    HIGH, MEDIUM, LOW, NO_MATCH, AMBIGUOUS
-}
-
 data class RecognizedMatch(
     val id: String,
     val title: String,
@@ -48,12 +42,11 @@ data class RecognizedMatch(
     val provider: String,
     val rawMetadata: Map<String, String> = emptyMap()
 ) {
-    /** Reject pure-numeric or empty titles so we never rename tracks to IDs. */
     fun isUsableTitle(): Boolean {
         val t = title.trim()
         if (t.isEmpty()) return false
-        if (t.all { it.isDigit() }) return false
-        if (t.matches(Regex("^\\d{6,}$"))) return false
+        if (t.all { it.isDigit() || it == '-' }) return false
+        if (t.matches(Regex("^\\d{5,}$"))) return false
         return true
     }
 }
