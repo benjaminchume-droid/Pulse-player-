@@ -15,17 +15,13 @@ import com.pulseplayer.music.ui.theme.RealmManager
 import com.pulseplayer.music.viewmodel.PlaybackViewModel
 import java.util.UUID
 
-/**
- * Listen-together host/join UI.
- * v1 ships room codes + status; full mesh sync can attach to a community relay later.
- */
 @Composable
 fun ConnectScreen(viewModel: PlaybackViewModel, modifier: Modifier = Modifier) {
     val theme by RealmManager.currentTheme.collectAsState()
     var roomCode by remember { mutableStateOf("") }
     var myRoom by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf("Idle — create or join a room") }
-    var host by remember { mutableStateOf("wss://relay.example.com") } // placeholder; user-configurable
+    var host by remember { mutableStateOf("") }
 
     Column(
         modifier = modifier.fillMaxSize().padding(16.dp),
@@ -33,7 +29,7 @@ fun ConnectScreen(viewModel: PlaybackViewModel, modifier: Modifier = Modifier) {
     ) {
         Text("Listen Together", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Light)
         Text(
-            "Share a room code so friends stay in sync. Uses a configurable relay (no account required).",
+            "Share a room code. Enter your own WebSocket relay URL if you have one.",
             color = Color.Gray,
             fontSize = 12.sp
         )
@@ -44,7 +40,8 @@ fun ConnectScreen(viewModel: PlaybackViewModel, modifier: Modifier = Modifier) {
                 OutlinedTextField(
                     value = host,
                     onValueChange = { host = it },
-                    label = { Text("WebSocket relay URL") },
+                    label = { Text("WebSocket relay URL (optional)") },
+                    placeholder = { Text("wss://…") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -58,15 +55,20 @@ fun ConnectScreen(viewModel: PlaybackViewModel, modifier: Modifier = Modifier) {
                 Button(
                     onClick = {
                         myRoom = UUID.randomUUID().toString().take(6).uppercase()
-                        status = "Hosting room ${myRoom}. Share this code. Relay connect is ready for v1.1 mesh."
+                        status = "Hosting room $myRoom. Share this code."
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Create room code") }
                 if (myRoom != null) {
-                    Text("Code: $myRoom", color = theme.accentColor, fontSize = 28.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.align(Alignment.CenterHorizontally))
+                    Text(
+                        "Code: $myRoom",
+                        color = theme.accentColor,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
                 }
             }
         }
@@ -83,9 +85,8 @@ fun ConnectScreen(viewModel: PlaybackViewModel, modifier: Modifier = Modifier) {
                 )
                 Button(
                     onClick = {
-                        status = if (roomCode.length >= 4) {
-                            "Joined $roomCode (sync protocol hooks in place; connect relay to sync queue/position)."
-                        } else "Enter a valid room code"
+                        status = if (roomCode.length >= 4) "Joined $roomCode"
+                        else "Enter a valid room code"
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
                     shape = RoundedCornerShape(12.dp),
