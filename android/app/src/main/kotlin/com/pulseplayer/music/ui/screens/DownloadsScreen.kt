@@ -28,10 +28,10 @@ fun DownloadsScreen(viewModel: PlaybackViewModel) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Download, null, tint = Color(0xFF7C4DFF))
-            Spacer(Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(8.dp))
             Text("Downloads", color = Color.White, fontSize = 22.sp)
         }
-        Spacer(modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         if (downloaded.isEmpty()) {
             Text("No downloaded or streamed tracks yet.", color = Color.Gray)
         } else {

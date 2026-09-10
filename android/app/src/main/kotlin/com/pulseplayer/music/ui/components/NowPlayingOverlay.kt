@@ -18,7 +18,6 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -76,7 +75,7 @@ fun NowPlayingOverlay(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
-                Box(Modifier = Modifier.fillMaxSize().background(Color(0xCC0A0A12)))
+                Box(modifier = Modifier.fillMaxSize().background(Color(0xCC0A0A12)))
             }
             Column(
                 modifier = Modifier
@@ -85,7 +84,10 @@ fun NowPlayingOverlay(
                     .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Row(Modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     IconButton(onClick = onClose) {
                         Icon(Icons.Default.KeyboardArrowDown, "Close", tint = Color.White)
                     }
@@ -97,7 +99,7 @@ fun NowPlayingOverlay(
                         )
                     }
                 }
-                Spacer(Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(24.dp))
                 AsyncImage(
                     model = s.coverUrl.ifBlank { null },
                     contentDescription = "Cover",
@@ -107,7 +109,7 @@ fun NowPlayingOverlay(
                         .clip(RoundedCornerShape(16.dp))
                         .background(Color.White.copy(alpha = 0.08f))
                 )
-                Spacer(Modifier.height(28.dp))
+                Spacer(modifier = Modifier.height(28.dp))
                 Text(
                     s.title,
                     color = Color.White,
@@ -120,7 +122,7 @@ fun NowPlayingOverlay(
                 if (s.album.isNotBlank() && s.album != "Unknown Album") {
                     Text(s.album, color = Color.White.copy(0.5f), fontSize = 13.sp)
                 }
-                Spacer(Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(20.dp))
                 Slider(
                     value = (playbackPosition.toFloat() / duration).coerceIn(0f, 1f),
                     onValueChange = { onSeekTo((it * duration).toLong()) },
