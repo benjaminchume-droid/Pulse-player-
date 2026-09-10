@@ -1,18 +1,20 @@
 package com.pulseplayer.music.playback
 
-import android.net.Uri
 import com.pulseplayer.music.domain.StreamResolution
 import com.pulseplayer.music.domain.Track
 
+/**
+ * Boundary for a future Media3/ExoPlayer implementation.
+ * Current app playback uses [com.pulseplayer.music.service.PlaybackService].
+ */
 interface Media3PlaybackPort {
-    fun play(track: Track, resolution: StreamResolution)
+    fun play(track: Track, stream: StreamResolution)
     fun pause()
-    fun resume()
     fun stop()
-    fun seekTo(positionMs: Long)
-    fun setQueue(items: List<Pair<Track, StreamResolution>>, startIndex: Int = 0)
-    fun currentPositionMs(): Long
-    fun isPlaying(): Boolean
 }
 
-fun StreamResolution.uri(): Uri = Uri.parse(url)
+class NoOpMedia3PlaybackPort : Media3PlaybackPort {
+    override fun play(track: Track, stream: StreamResolution) {}
+    override fun pause() {}
+    override fun stop() {}
+}
