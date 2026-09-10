@@ -1,59 +1,58 @@
 package com.pulseplayer.music.metadata
 
-import com.pulseplayer.music.data.*
+import com.pulseplayer.music.data.AskBeforeChanging
+import com.pulseplayer.music.data.ConfidenceFilter
+import com.pulseplayer.music.data.ConfidenceLevel
+import com.pulseplayer.music.data.MetadataSettings
 
-/**
- * Policy engine for metadata operations.
- */
 class MetadataPolicy(private val settings: MetadataSettings) {
 
-    /**
-     * Determine what metadata changes to apply based on user settings.
-     */
     fun determineChanges(
         existingMetadata: ExistingMetadata,
-        newMetadata: CanonicalTrackMetadata
+        newMetadata: CanonicalTrackMetadata,
+        isAmbiguous: Boolean = false
     ): MetadataChangeSet {
         val changes = mutableListOf<MetadataFieldChange>()
-
-        // Check if we should replace existing metadata
         val shouldReplace = settings.replaceExistingMetadata
 
-        // Title
-        if (shouldFillField(MetadataField.TITLE, existingMetadata.title, shouldReplace)) {
+        if (shouldFillField(MetadataField.TITLE, existingMetadata.title, shouldReplace) &&
+            MetadataEnricher.isValidTitle(newMetadata.title)
+        ) {
             changes.add(MetadataFieldChange(MetadataField.TITLE, existingMetadata.title, newMetadata.title))
         }
-
-        // Artist
         if (shouldFillField(MetadataField.ARTIST, existingMetadata.artist, shouldReplace)) {
             changes.add(MetadataFieldChange(MetadataField.ARTIST, existingMetadata.artist, newMetadata.artist))
         }
-
-        // Album
         if (shouldFillField(MetadataField.ALBUM, existingMetadata.album, shouldReplace)) {
             changes.add(MetadataFieldChange(MetadataField.ALBUM, existingMetadata.album, newMetadata.album))
         }
-
-        // Year
         if (settings.fillYear && shouldFillField(MetadataField.YEAR, existingMetadata.year?.toString(), shouldReplace)) {
-            changes.add(MetadataFieldChange(MetadataField.YEAR, existingMetadata.year?.toString(), newMetadata.year?.toString()))
+            changes.add(
+                MetadataFieldChange(
+                    MetadataField.YEAR,
+                    existingMetadata.year?.toString(),
+                    newMetadata.year?.toString()
+                )
+            )
         }
 
-        // Artwork
-        val shouldAddArtwork = settings.fillArtwork && 
-            (shouldReplace || existingMetadata.hasArtwork.not())
+        val shouldAddArtwork = settings.fillArtwork && (shouldReplace || !existingMetadata.hasArtwork)
 
         return MetadataChangeSet(
             changes = changes,
             shouldAddArtwork = shouldAddArtwork,
-            requiresConfirmation = shouldRequireConfirmation(newMetadata),
-            isAmbiguous = newMetadata.isAmbiguous
+            requiresConfirmation = when (settings.askBeforeChanging) {
+                AskBeforeChanging.ALWAYS -> true
+                AskBeforeChanging.AMBIGUOUS_ONLY -> isAmbiguous
+                AskBeforeChanging.NEVER -> false
+            },
+            isAmbiguous = isAmbiguous
         )
     }
 
     private fun shouldFillField(field: MetadataField, existingValue: String?, shouldReplace: Boolean): Boolean {
-        val isMissing = existingValue.isNullOrBlank()
-
+        val isMissing = existingValue.isNullOrBlank() ||
+            (field == MetadataField.TITLE && !MetadataEnricher.isValidTitle(existingValue))
         return when (field) {
             MetadataField.TITLE -> settings.fillMissingMetadata && (isMissing || shouldReplace)
             MetadataField.ARTIST -> settings.fillArtist && (isMissing || shouldReplace)
@@ -62,32 +61,16 @@ class MetadataPolicy(private val settings: MetadataSettings) {
         }
     }
 
-    private fun shouldRequireConfirmation(metadata: CanonicalTrackMetadata): Boolean {
-        return when (settings.askBeforeChanging) {
-            AskBeforeChanging.ALWAYS -> true
-            AskBeforeChanging.AMBIGUOUS_ONLY -> metadata.isAmbiguous
-            AskBeforeChanging.NEVER -> false
-        }
-    }
-
-    /**
-     * Check if confidence meets the filter threshold.
-     */
     fun meetsConfidenceThreshold(confidence: ConfidenceLevel): Boolean {
         return when (settings.confidenceFilter) {
             ConfidenceFilter.HIGH_ONLY -> confidence == ConfidenceLevel.HIGH
-            ConfidenceFilter.HIGH_AND_MEDIUM -> 
+            ConfidenceFilter.HIGH_AND_MEDIUM ->
                 confidence == ConfidenceLevel.HIGH || confidence == ConfidenceLevel.MEDIUM
         }
     }
 }
 
-enum class MetadataField {
-    TITLE,
-    ARTIST,
-    ALBUM,
-    YEAR
-}
+enum class MetadataField { TITLE, ARTIST, ALBUM, YEAR }
 
 data class ExistingMetadata(
     val title: String?,
