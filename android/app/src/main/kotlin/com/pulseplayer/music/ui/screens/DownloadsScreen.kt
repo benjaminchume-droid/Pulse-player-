@@ -1,153 +1,62 @@
 package com.pulseplayer.music.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.pulseplayer.music.data.Song
+import com.pulseplayer.music.viewmodel.PlaybackViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DownloadsScreen(
-    downloadedSongs: List<Song>,
-    onSongClick: (Song) -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF1a1a2e))
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "Downloads",
-            style = MaterialTheme.typography.headlineMedium,
-            color = Color.White,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
+fun DownloadsScreen(viewModel: PlaybackViewModel) {
+    val songs by viewModel.songs.collectAsState()
+    val downloaded = remember(songs) { songs.filter { it.isDownloaded || it.sourceType == "stream" } }
 
-        if (downloadedSongs.isEmpty()) {
-            EmptyDownloadsState()
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Download, null, tint = Color(0xFF7C4DFF))
+            Spacer(Modifier.width(8.dp))
+            Text("Downloads", color = Color.White, fontSize = 22.sp)
+        }
+        Spacer(modifier.height(12.dp))
+        if (downloaded.isEmpty()) {
+            Text("No downloaded or streamed tracks yet.", color = Color.Gray)
         } else {
-            DownloadedSongsList(
-                songs = downloadedSongs,
-                onSongClick = onSongClick
-            )
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                items(downloaded, key = { it.id }) { song ->
+                    ListItem(
+                        headlineContent = { Text(song.title, color = Color.White, maxLines = 1) },
+                        supportingContent = { Text(song.artist, color = Color.Gray, maxLines = 1) },
+                        leadingContent = {
+                            AsyncImage(
+                                model = song.coverUrl.ifBlank { null },
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp)
+                            )
+                        },
+                        trailingContent = {
+                            Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4ade80))
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.playSong(downloaded, song) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
+            }
         }
-    }
-}
-
-@Composable
-private fun EmptyDownloadsState() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(300.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.White.copy(alpha = 0.05f)),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Icon(
-                painter = androidx.compose.material.icons.Icons.Filled.Download,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.3f),
-                modifier = Modifier.size(64.dp)
-            )
-            Text(
-                text = "No downloaded tracks yet",
-                color = Color.White.copy(alpha = 0.5f),
-                fontSize = 16.sp
-            )
-            Text(
-                text = "Download songs to listen offline",
-                color = Color.White.copy(alpha = 0.3f),
-                fontSize = 14.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun DownloadedSongsList(
-    songs: List<Song>,
-    onSongClick: (Song) -> Unit
-) {
-    LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        items(songs) { song ->
-            DownloadedSongItem(
-                song = song,
-                onClick = { onSongClick(song) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun DownloadedSongItem(
-    song: Song,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .background(Color.White.copy(alpha = 0.05f))
-            .clip(RoundedCornerShape(12.dp))
-            .padding(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        AsyncImage(
-            model = song.albumArt,
-            contentDescription = "Album art for ${song.title}",
-            modifier = Modifier
-                .size(56.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color.White.copy(alpha = 0.1f))
-        )
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = song.title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color.White,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = song.artist,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.5f),
-                fontSize = 13.sp
-            )
-        }
-
-        Icon(
-            painter = androidx.compose.material.icons.Icons.Filled.CheckCircle,
-            contentDescription = "Downloaded",
-            tint = Color(0xFF4ade80),
-            modifier = Modifier.size(20.dp)
-        )
     }
 }

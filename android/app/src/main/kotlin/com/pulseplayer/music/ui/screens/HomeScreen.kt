@@ -1,153 +1,84 @@
 package com.pulseplayer.music.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.pulseplayer.music.viewmodel.PlaybackViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(
-    onNavigateToDownloads: () -> Unit = {}
-) {
-    var selectedTab by remember { mutableStateOf(0) }
+fun HomeScreen(viewModel: PlaybackViewModel) {
+    val songs by viewModel.songs.collectAsState()
+    val playlists by viewModel.playlists.collectAsState()
+    val isScanning by viewModel.isScanning.collectAsState()
+    val level by viewModel.userLevel.collectAsState()
+    val xp by viewModel.userXp.collectAsState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF0f0f1a))
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-        ) {
-            when (selectedTab) {
-                0 -> HomeTabContent()
-                1 -> MixesTabContent()
-                2 -> LibraryTabContent()
+        item {
+            Text("Home", color = Color.White, fontSize = 24.sp, style = MaterialTheme.typography.titleLarge)
+            Text("Level $level · $xp XP", color = Color.Gray, fontSize = 13.sp)
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                StatChip(Icons.Default.LibraryMusic, "${songs.size}", "Songs")
+                StatChip(Icons.Default.QueueMusic, "${playlists.size}", "Playlists")
             }
         }
-
-        NavigationBar(
-            containerColor = Color(0xFF1a1a2e),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-        ) {
-            NavigationBarItem(
-                icon = {
-                    Icon(
-                        painter = androidx.compose.material.icons.Icons.Filled.Home,
-                        contentDescription = "Home",
-                        tint = if (selectedTab == 0) Color(0xFF4ade80) else Color.White.copy(alpha = 0.5f)
-                    )
-                },
-                label = { Text("Home", fontSize = 11.sp) },
-                selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
-                colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = Color.White.copy(alpha = 0.1f)
-                )
-            )
-            NavigationBarItem(
-                icon = {
-                    Icon(
-                        painter = androidx.compose.material.icons.Icons.Filled.QueueMusic,
-                        contentDescription = "Mixes",
-                        tint = if (selectedTab == 1) Color(0xFF4ade80) else Color.White.copy(alpha = 0.5f)
-                    )
-                },
-                label = { Text("Mixes", fontSize = 11.sp) },
-                selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
-                colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = Color.White.copy(alpha = 0.1f)
-                )
-            )
-            NavigationBarItem(
-                icon = {
-                    Icon(
-                        painter = androidx.compose.material.icons.Icons.Filled.AudioStream,
-                        contentDescription = "Streaming",
-                        tint = if (selectedTab == 2) Color(0xFF4ade80) else Color.White.copy(alpha = 0.5f)
-                    )
-                },
-                label = { Text("Stream", fontSize = 11.sp) },
-                selected = selectedTab == 2,
-                onClick = { selectedTab = 2 },
-                colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = Color.White.copy(alpha = 0.1f)
-                )
-            )
-            NavigationBarItem(
-                icon = {
-                    Icon(
-                        painter = androidx.compose.material.icons.Icons.Filled.LibraryMusic,
-                        contentDescription = "Library",
-                        tint = if (selectedTab == 3) Color(0xFF4ade80) else Color.White.copy(alpha = 0.5f)
-                    )
-                },
-                label = { Text("Library", fontSize = 11.sp) },
-                selected = selectedTab == 3,
-                onClick = { selectedTab = 3 },
-                colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = Color.White.copy(alpha = 0.1f)
-                )
+        item {
+            Button(
+                onClick = { viewModel.scanDeviceAudio() },
+                enabled = !isScanning,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF))
+            ) {
+                Icon(Icons.Default.Refresh, null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (isScanning) "Scanning…" else "Scan library")
+            }
+        }
+        item {
+            Text("Recently in library", color = Color.White, fontSize = 16.sp)
+        }
+        items(songs.take(20), key = { it.id }) { song ->
+            ListItem(
+                headlineContent = { Text(song.title, color = Color.White, maxLines = 1) },
+                supportingContent = { Text(song.artist, color = Color.Gray, maxLines = 1) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )
         }
     }
 }
 
 @Composable
-private fun HomeTabContent() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = "Home",
-            color = Color.White.copy(alpha = 0.5f),
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-@Composable
-private fun MixesTabContent() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = "Mixes",
-            color = Color.White.copy(alpha = 0.5f),
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-@Composable
-private fun LibraryTabContent() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = "Library",
-            color = Color.White.copy(alpha = 0.5f),
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
+private fun StatChip(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String, label: String) {
+    Surface(color = Color(0x22FFFFFF), shape = MaterialTheme.shapes.medium) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, null, tint = Color(0xFFB39DDB))
+            Spacer(Modifier.width(8.dp))
+            Column {
+                Text(value, color = Color.White, fontSize = 16.sp)
+                Text(label, color = Color.Gray, fontSize = 11.sp)
+            }
+        }
     }
 }
