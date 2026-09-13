@@ -37,24 +37,27 @@ fun DownloadsScreen(viewModel: PlaybackViewModel) {
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 items(downloaded, key = { it.id }) { song ->
-                    ListItem(
-                        headlineContent = { Text(song.title, color = Color.White, maxLines = 1) },
-                        supportingContent = { Text(song.artist, color = Color.Gray, maxLines = 1) },
-                        leadingContent = {
-                            AsyncImage(
-                                model = song.coverUrl.ifBlank { null },
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp)
-                            )
-                        },
-                        trailingContent = {
-                            Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4ade80))
-                        },
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { viewModel.playSong(downloaded, song) },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
+                            .clickable { viewModel.playSong(downloaded, song) }
+                    ) {
+                        ListItem(
+                            headlineContent = { Text(song.title, color = Color.White, maxLines = 1) },
+                            supportingContent = { Text(song.artist, color = Color.Gray, maxLines = 1) },
+                            leadingContent = {
+                                AsyncImage(
+                                    model = song.coverUrl.ifBlank { null },
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                            },
+                            trailingContent = {
+                                Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4ade80))
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                    }
                 }
             }
         }
