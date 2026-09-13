@@ -20,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -192,11 +193,6 @@ fun NowPlayingOverlay(
             }
         }
     }
-}
-
-@Composable
-private fun TextButton(onClick: () -> Unit, enabled: Boolean = true, content: @Composable () -> Unit) {
-    androidx.compose.material3.TextButton(onClick = onClick, enabled = enabled) { content() }
 }
 
 private fun formatMs(ms: Long): String {
